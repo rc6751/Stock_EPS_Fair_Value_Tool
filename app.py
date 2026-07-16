@@ -371,6 +371,15 @@ for key, value in {
 }.items():
     st.session_state.setdefault(key, value)
 
+# Apply a watchlist selection before Streamlit creates ticker input widgets.
+# This avoids changing a widget-backed session key after the widget exists.
+if "pending_watchlist_ticker" in st.session_state:
+    pending_ticker = str(st.session_state.pop("pending_watchlist_ticker")).upper().strip()
+    if pending_ticker:
+        st.session_state.selected_ticker = pending_ticker
+        st.session_state.options_ticker = pending_ticker
+        st.session_state.active_section = "Price vs EPS"
+
 st.title("Stock_EPS_Fair_Value_Tool")
 st.caption("Streamlit web edition — Yahoo Finance data is unofficial and may be delayed or rate-limited.")
 
@@ -465,8 +474,14 @@ if active_section == "Watchlists":
     tickers = CATEGORY_LISTS[category]
     with st.spinner(f"Loading {category}..."):
         watch_df = scan_group(tuple(tickers))
+    st.caption("Click any row to load that ticker directly into the chart and Options Finder.")
     event = st.dataframe(
-        watch_df, use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row",
+        watch_df,
+        key=f"watchlist_table_{category}",
+        use_container_width=True,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
         column_config={
             "Price": st.column_config.NumberColumn(format="$%.2f"),
             "Original Fair Value": st.column_config.NumberColumn(format="$%.2f"),
@@ -481,10 +496,9 @@ if active_section == "Watchlists":
     )
     selected_rows = event.selection.rows if event and hasattr(event, "selection") else []
     if selected_rows:
-        selected = str(watch_df.iloc[selected_rows[0]]["Ticker"])
-        st.session_state.selected_ticker = selected
-        st.session_state.options_ticker = selected
-        st.success(f"{selected} loaded into Stock Analysis and Options Finder. Click Price vs EPS or Options Finder above to continue.")
+        selected = str(watch_df.iloc[selected_rows[0]]["Ticker"]).upper().strip()
+        st.session_state.pending_watchlist_ticker = selected
+        st.rerun()
 
 if active_section == "Paper Trading":
     trades = load_trades()
