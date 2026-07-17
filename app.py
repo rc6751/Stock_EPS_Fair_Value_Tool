@@ -15,16 +15,47 @@ st.set_page_config(page_title="Stock_EPS_Fair_Value_Tool", page_icon="📈", lay
 
 st.markdown("""
 <style>
-.block-container {padding-top: 1.25rem; max-width: 100%;}
+:root { --ink:#0a1630; --blue:#2563eb; --cyan:#22d3ee; --panel:#101d3d; }
+.block-container {padding-top: 1rem; padding-bottom: 2rem; max-width: 100%;}
 div[data-testid="stHorizontalBlock"] > div {min-width: 0;}
 div.stButton > button {
-    min-height: 3.2rem;
-    font-size: 1.02rem;
-    font-weight: 700;
-    border-radius: 8px;
+    min-height: 3.15rem; font-size: 1rem; font-weight: 750; border-radius: 10px;
 }
 [data-testid="stSidebar"] {min-width: 285px; max-width: 285px;}
 .nav-label {font-size: .82rem; color: #777; margin-bottom: .15rem;}
+.brandbar {display:flex;align-items:center;justify-content:space-between;padding:.35rem .2rem .8rem;}
+.brandname {font-weight:850;font-size:1.15rem;letter-spacing:-.02em;}
+.brandtag {font-size:.78rem;opacity:.7;}
+.hero {
+  position:relative; overflow:hidden; min-height:520px; border-radius:24px; padding:64px 62px;
+  background:linear-gradient(135deg,#071226 0%,#102451 52%,#0a3a5e 100%);
+  color:white; box-shadow:0 24px 70px rgba(4,18,48,.22); margin:8px 0 28px;
+}
+.hero:before {content:"";position:absolute;width:480px;height:480px;border-radius:50%;right:-120px;top:-190px;background:radial-gradient(circle,rgba(34,211,238,.35),rgba(37,99,235,0));}
+.hero:after {content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(to right,transparent 0%,black 55%);}
+.hero-copy {position:relative;z-index:2;max-width:640px;padding-top:8px;}
+.eyebrow {display:inline-block;padding:7px 12px;border:1px solid rgba(255,255,255,.22);border-radius:999px;background:rgba(255,255,255,.08);font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;}
+.hero h1 {font-size:4rem;line-height:1.02;letter-spacing:-.055em;margin:22px 0 18px;max-width:740px;}
+.hero p {font-size:1.15rem;line-height:1.65;color:rgba(255,255,255,.78);max-width:600px;}
+.market-card {position:absolute;z-index:3;right:55px;top:85px;width:360px;padding:22px;border:1px solid rgba(255,255,255,.16);border-radius:20px;background:rgba(7,18,38,.68);backdrop-filter:blur(15px);box-shadow:0 24px 70px rgba(0,0,0,.3);}
+.market-card .ticker {display:flex;justify-content:space-between;align-items:end;margin-bottom:12px;}
+.market-card .price {font-size:2rem;font-weight:850;}
+.market-card .gain {color:#5ee8a5;font-weight:750;}
+.spark {width:100%;height:160px;}
+.statrow {display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px;}
+.stat {padding:10px;border-radius:12px;background:rgba(255,255,255,.06);font-size:.72rem;color:rgba(255,255,255,.6);}
+.stat b {display:block;color:white;font-size:.9rem;margin-top:3px;}
+.section-title {font-size:2rem;font-weight:850;letter-spacing:-.035em;margin:22px 0 6px;}
+.section-copy {opacity:.72;margin-bottom:24px;}
+.feature-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin:8px 0 34px;}
+.feature-card {border:1px solid rgba(128,128,128,.22);border-radius:18px;padding:24px;min-height:190px;background:rgba(128,128,128,.045);}
+.feature-icon {font-size:1.55rem;width:48px;height:48px;display:flex;align-items:center;justify-content:center;border-radius:14px;background:rgba(37,99,235,.12);margin-bottom:18px;}
+.feature-card h3 {margin:0 0 8px;font-size:1.08rem;}
+.feature-card p {margin:0;opacity:.68;line-height:1.55;font-size:.93rem;}
+.proofbar {display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:22px;border-radius:18px;background:rgba(37,99,235,.07);margin:12px 0 30px;}
+.proof {text-align:center;font-size:.78rem;opacity:.72;}.proof b {display:block;font-size:1.35rem;opacity:1;margin-bottom:4px;}
+.site-footer {padding:24px 4px 4px;border-top:1px solid rgba(128,128,128,.22);font-size:.78rem;opacity:.65;line-height:1.55;}
+@media (max-width: 1000px) {.hero{padding:42px 28px;min-height:auto}.hero h1{font-size:2.8rem}.market-card{position:relative;right:auto;top:auto;width:auto;margin-top:35px}.feature-grid{grid-template-columns:1fr}.proofbar{grid-template-columns:1fr 1fr}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -365,6 +396,53 @@ def portfolio_summary(trades):
     return cash, market_value, account, realized, unrealized, pd.DataFrame(rows)
 
 
+def render_homepage():
+    st.markdown("""
+    <section class="hero">
+      <div class="hero-copy">
+        <span class="eyebrow">Smarter stock valuation</span>
+        <h1>See what a stock may really be worth.</h1>
+        <p>Connect price, earnings, fair value, technical indicators and income opportunities in one focused research workspace.</p>
+      </div>
+      <div class="market-card">
+        <div class="ticker"><div><div style="opacity:.62;font-size:.78rem">VALUATION SNAPSHOT</div><b>Price vs. Fair Value</b></div><div style="text-align:right"><div class="price">$182.40</div><div class="gain">▲ 14.8% upside</div></div></div>
+        <svg class="spark" viewBox="0 0 340 160" preserveAspectRatio="none" aria-label="Illustrative stock chart">
+          <defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#22d3ee" stop-opacity=".42"/><stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/></linearGradient></defs>
+          <line x1="0" y1="130" x2="340" y2="130" stroke="rgba(255,255,255,.12)"/><line x1="0" y1="82" x2="340" y2="82" stroke="rgba(255,255,255,.12)"/><line x1="0" y1="34" x2="340" y2="34" stroke="rgba(255,255,255,.12)"/>
+          <path d="M0 130 C28 124,42 132,66 111 S105 117,128 89 S171 103,197 68 S236 79,260 47 S302 53,340 20 L340 160 L0 160 Z" fill="url(#area)"/>
+          <path d="M0 130 C28 124,42 132,66 111 S105 117,128 89 S171 103,197 68 S236 79,260 47 S302 53,340 20" fill="none" stroke="#67e8f9" stroke-width="4" stroke-linecap="round"/>
+          <line x1="0" y1="54" x2="340" y2="54" stroke="#fbbf24" stroke-width="2" stroke-dasharray="7 7"/><text x="226" y="46" fill="#fde68a" font-size="11">FAIR VALUE</text>
+        </svg>
+        <div class="statrow"><div class="stat">EPS TREND<b>Growing</b></div><div class="stat">RSI 14<b>52.6</b></div><div class="stat">SIGNAL<b>BUY</b></div></div>
+      </div>
+    </section>
+    """, unsafe_allow_html=True)
+
+    launch_left, launch_mid, launch_right = st.columns([1.2, 1, 4])
+    with launch_left:
+        if st.button("Launch Dashboard  →", type="primary", use_container_width=True, key="hero_launch"):
+            st.session_state.active_section = "Price vs EPS"
+            st.rerun()
+    with launch_mid:
+        if st.button("Explore Watchlists", use_container_width=True, key="hero_watchlists"):
+            st.session_state.active_section = "Watchlists"
+            st.rerun()
+
+    st.markdown('<div class="section-title">One workspace. Multiple investing lenses.</div><div class="section-copy">Move from idea to valuation, technical context and trade research without juggling separate tools.</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="feature-grid">
+      <div class="feature-card"><div class="feature-icon">📈</div><h3>Price vs. EPS</h3><p>Compare market price with earnings-driven fair value and see valuation gaps directly on an interactive chart.</p></div>
+      <div class="feature-card"><div class="feature-icon">👑</div><h3>Curated Watchlists</h3><p>Explore Dividend Kings, leading technology stocks, semiconductors and other focused groups with one-click chart loading.</p></div>
+      <div class="feature-card"><div class="feature-icon">🎯</div><h3>Options Finder</h3><p>Filter contracts by annualized return, days to expiration, estimated delta and trading volume.</p></div>
+      <div class="feature-card"><div class="feature-icon">📊</div><h3>Technical Context</h3><p>Use Bollinger Bands, RSI and multiple chart windows to understand momentum around the valuation story.</p></div>
+      <div class="feature-card"><div class="feature-icon">💼</div><h3>Paper Trading</h3><p>Record hypothetical buys and sells, track open positions and review realized and unrealized performance.</p></div>
+      <div class="feature-card"><div class="feature-icon">🧪</div><h3>Backtesting</h3><p>Test historical buy-and-hold results and evaluate the effect of reinvesting dividends over time.</p></div>
+    </div>
+    <div class="proofbar"><div class="proof"><b>5</b>Integrated research tools</div><div class="proof"><b>7</b>Curated stock groups</div><div class="proof"><b>1-click</b>Watchlist-to-chart flow</div><div class="proof"><b>Free</b>Public web access</div></div>
+    <div class="site-footer"><b>Stock EPS Fair Value Tool</b><br>For educational and informational purposes only. Market data may be delayed, incomplete or inaccurate. Nothing presented is investment advice or a recommendation to buy or sell any security.</div>
+    """, unsafe_allow_html=True)
+
+
 init_db()
 for key, value in {
     "selected_ticker": "AAPL", "options_ticker": "AAPL", "manual_growth": "", "manual_pe": ""
@@ -380,23 +458,12 @@ if "pending_watchlist_ticker" in st.session_state:
         st.session_state.options_ticker = pending_ticker
         st.session_state.active_section = "Price vs EPS"
 
-st.title("Stock_EPS_Fair_Value_Tool")
-st.caption("Streamlit web edition — Yahoo Finance data is unofficial and may be delayed or rate-limited.")
+st.session_state.setdefault("active_section", "Home")
 
-with st.sidebar:
-    st.header("Stock analysis")
-    ticker = st.text_input("Ticker", key="selected_ticker").upper().strip()
-    history_months = st.radio("Chart history", [1, 3, 6], horizontal=True, format_func=lambda x: f"{x}M")
-    mg_text = st.text_input("Manual EPS growth %", key="manual_growth")
-    pe_text = st.text_input("Manual fair P/E", key="manual_pe")
-    analyze = st.button("Analyze", type="primary", use_container_width=True)
-    if st.button("Clear data cache", use_container_width=True):
-        st.cache_data.clear()
-        st.success("Cached Yahoo data cleared.")
-
-st.session_state.setdefault("active_section", "Price vs EPS")
+st.markdown('<div class="brandbar"><div><div class="brandname">Stock EPS Fair Value Tool</div><div class="brandtag">Research • Valuation • Technicals</div></div><div class="brandtag">Market intelligence, simplified</div></div>', unsafe_allow_html=True)
 
 section_names = [
+    ("⌂", "Home"),
     ("📈", "Price vs EPS"),
     ("📋", "Watchlists"),
     ("💼", "Paper Trading"),
@@ -415,8 +482,28 @@ for nav_col, (icon, section_name) in zip(nav_columns, section_names):
             st.session_state.active_section = section_name
             st.rerun()
 
-st.divider()
 active_section = st.session_state.active_section
+
+ticker = st.session_state.selected_ticker.upper().strip()
+history_months = 3
+mg_text = st.session_state.manual_growth
+pe_text = st.session_state.manual_pe
+
+if active_section == "Home":
+    render_homepage()
+else:
+    st.caption("Yahoo Finance data is unofficial and may be delayed or rate-limited.")
+    with st.sidebar:
+        st.header("Stock analysis")
+        ticker = st.text_input("Ticker", key="selected_ticker").upper().strip()
+        history_months = st.radio("Chart history", [1, 3, 6], index=1, horizontal=True, format_func=lambda x: f"{x}M")
+        mg_text = st.text_input("Manual EPS growth %", key="manual_growth")
+        pe_text = st.text_input("Manual fair P/E", key="manual_pe")
+        st.button("Analyze", type="primary", use_container_width=True)
+        if st.button("Clear data cache", use_container_width=True):
+            st.cache_data.clear()
+            st.success("Cached Yahoo data cleared.")
+    st.divider()
 
 if active_section == "Price vs EPS":
     if ticker:
