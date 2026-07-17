@@ -477,7 +477,7 @@ def render_homepage():
     <section class="hero">
       <div class="hero-copy">
         <span class="eyebrow">Live markets + smarter valuation</span>
-        <h1>Markets at a glance. Fair value in one click.</h1>
+        <h1>Stock Fair Value in One Click.</h1>
         <p>Check stocks, Bitcoin, major indexes and oil, then move directly into earnings-based valuation and technical analysis.</p>
       </div>
       <div class="market-card">
