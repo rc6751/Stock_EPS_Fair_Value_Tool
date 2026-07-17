@@ -55,6 +55,7 @@ div.stButton > button {
 .proofbar {display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:22px;border-radius:18px;background:rgba(37,99,235,.07);margin:12px 0 30px;}
 .proof {text-align:center;font-size:.78rem;opacity:.72;}.proof b {display:block;font-size:1.35rem;opacity:1;margin-bottom:4px;}
 .site-footer {padding:24px 4px 4px;border-top:1px solid rgba(128,128,128,.22);font-size:.78rem;opacity:.65;line-height:1.55;}
+.market-strip {display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:12px 0 24px;}
 @media (max-width: 1000px) {.hero{padding:42px 28px;min-height:auto}.hero h1{font-size:2.8rem}.market-card{position:relative;right:auto;top:auto;width:auto;margin-top:35px}.feature-grid{grid-template-columns:1fr}.proofbar{grid-template-columns:1fr 1fr}}
 </style>
 """, unsafe_allow_html=True)
@@ -396,24 +397,75 @@ def portfolio_summary(trades):
     return cash, market_value, account, realized, unrealized, pd.DataFrame(rows)
 
 
+
+@st.cache_data(ttl=180, show_spinner=False)
+def quick_quote(ticker: str):
+    ticker = ticker.upper().strip()
+    info = get_info(ticker)
+    hist = get_history(ticker, period="5d", interval="1d")
+    closes = pd.to_numeric(hist["Close"], errors="coerce").dropna()
+    price = sf(info.get("currentPrice")) or sf(info.get("regularMarketPrice")) or (sf(closes.iloc[-1]) if not closes.empty else None)
+    previous = sf(info.get("previousClose")) or (sf(closes.iloc[-2]) if len(closes) > 1 else None)
+    change = (price - previous) if price is not None and previous is not None else None
+    change_pct = (change / previous * 100) if change is not None and previous else None
+    return {
+        "ticker": ticker, "name": info.get("shortName") or info.get("longName") or ticker,
+        "price": price, "change": change, "change_pct": change_pct,
+        "volume": sf(info.get("volume")) or sf(info.get("regularMarketVolume")),
+        "market_cap": sf(info.get("marketCap")), "pe": sf(info.get("trailingPE")),
+        "eps": sf(info.get("trailingEps")), "dividend_yield": (sf(info.get("dividendYield")) or 0) * 100,
+    }
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def most_active_quotes():
+    fallback = ["NVDA","TSLA","AAPL","AMD","AMZN","SOFI","PLTR","INTC","F","BAC","MU","NIO","MARA","RIVN","T"]
+    symbols = []
+    try:
+        result = yf.screen("most_actives", count=25)
+        quotes = result.get("quotes", []) if isinstance(result, dict) else []
+        symbols = [q.get("symbol") for q in quotes if q.get("symbol") and q.get("quoteType") in (None, "EQUITY")]
+    except Exception:
+        symbols = fallback
+    symbols = list(dict.fromkeys(symbols + fallback))[:25]
+    rows = []
+    for symbol in symbols:
+        try:
+            rows.append(quick_quote(symbol))
+        except Exception:
+            continue
+    rows.sort(key=lambda r: r.get("volume") or 0, reverse=True)
+    return rows[:10]
+
+
+def money(value):
+    return "N/A" if value is None else f"${value:,.2f}"
+
+
+def compact_number(value):
+    if value is None:
+        return "N/A"
+    for unit, divisor in (("T",1e12),("B",1e9),("M",1e6),("K",1e3)):
+        if abs(value) >= divisor:
+            return f"{value/divisor:,.2f}{unit}"
+    return f"{value:,.0f}"
+
 def render_homepage():
     st.markdown("""
     <section class="hero">
       <div class="hero-copy">
-        <span class="eyebrow">Smarter stock valuation</span>
-        <h1>See what a stock may really be worth.</h1>
-        <p>Connect price, earnings, fair value, technical indicators and income opportunities in one focused research workspace.</p>
+        <span class="eyebrow">Live markets + smarter valuation</span>
+        <h1>Markets at a glance. Fair value in one click.</h1>
+        <p>Check stocks, Bitcoin, major indexes and oil, then move directly into earnings-based valuation and technical analysis.</p>
       </div>
       <div class="market-card">
-        <div class="ticker"><div><div style="opacity:.62;font-size:.78rem">VALUATION SNAPSHOT</div><b>Price vs. Fair Value</b></div><div style="text-align:right"><div class="price">$182.40</div><div class="gain">▲ 14.8% upside</div></div></div>
-        <svg class="spark" viewBox="0 0 340 160" preserveAspectRatio="none" aria-label="Illustrative stock chart">
+        <div class="ticker"><div><div style="opacity:.62;font-size:.78rem">MARKET INTELLIGENCE</div><b>Quote → Valuation → Decision</b></div></div>
+        <svg class="spark" viewBox="0 0 340 160" preserveAspectRatio="none" aria-label="Illustrative market chart">
           <defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#22d3ee" stop-opacity=".42"/><stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/></linearGradient></defs>
-          <line x1="0" y1="130" x2="340" y2="130" stroke="rgba(255,255,255,.12)"/><line x1="0" y1="82" x2="340" y2="82" stroke="rgba(255,255,255,.12)"/><line x1="0" y1="34" x2="340" y2="34" stroke="rgba(255,255,255,.12)"/>
           <path d="M0 130 C28 124,42 132,66 111 S105 117,128 89 S171 103,197 68 S236 79,260 47 S302 53,340 20 L340 160 L0 160 Z" fill="url(#area)"/>
           <path d="M0 130 C28 124,42 132,66 111 S105 117,128 89 S171 103,197 68 S236 79,260 47 S302 53,340 20" fill="none" stroke="#67e8f9" stroke-width="4" stroke-linecap="round"/>
-          <line x1="0" y1="54" x2="340" y2="54" stroke="#fbbf24" stroke-width="2" stroke-dasharray="7 7"/><text x="226" y="46" fill="#fde68a" font-size="11">FAIR VALUE</text>
         </svg>
-        <div class="statrow"><div class="stat">EPS TREND<b>Growing</b></div><div class="stat">RSI 14<b>52.6</b></div><div class="stat">SIGNAL<b>BUY</b></div></div>
+        <div class="statrow"><div class="stat">LIVE QUOTES<b>Stocks</b></div><div class="stat">MARKETS<b>Indexes</b></div><div class="stat">ALTERNATIVES<b>BTC + Oil</b></div></div>
       </div>
     </section>
     """, unsafe_allow_html=True)
@@ -428,20 +480,72 @@ def render_homepage():
             st.session_state.active_section = "Watchlists"
             st.rerun()
 
-    st.markdown('<div class="section-title">One workspace. Multiple investing lenses.</div><div class="section-copy">Move from idea to valuation, technical context and trade research without juggling separate tools.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Instant market quote</div><div class="section-copy">Enter a stock symbol for a Yahoo Finance-style snapshot, then open the complete analysis.</div>', unsafe_allow_html=True)
+    q1, q2 = st.columns([5,1])
+    with q1:
+        home_ticker = st.text_input("Stock symbol", value=st.session_state.get("home_quote_ticker", "AAPL"), label_visibility="collapsed", placeholder="Enter ticker — AAPL, MSFT, KO...").upper().strip()
+    with q2:
+        get_quote = st.button("Get Quote", type="primary", use_container_width=True, key="home_get_quote")
+    if get_quote and home_ticker:
+        st.session_state.home_quote_ticker = home_ticker
+    quote_ticker = st.session_state.get("home_quote_ticker", "AAPL")
+    try:
+        q = quick_quote(quote_ticker)
+        c1,c2,c3,c4,c5,c6 = st.columns(6)
+        delta = None if q["change"] is None else f'{q["change"]:+.2f} ({q["change_pct"]:+.2f}%)'
+        c1.metric(q["ticker"], money(q["price"]), delta)
+        c2.metric("Volume", compact_number(q["volume"]))
+        c3.metric("Market Cap", compact_number(q["market_cap"]))
+        c4.metric("P/E", "N/A" if q["pe"] is None else f'{q["pe"]:.2f}')
+        c5.metric("EPS", "N/A" if q["eps"] is None else f'${q["eps"]:.2f}')
+        c6.metric("Dividend Yield", f'{q["dividend_yield"]:.2f}%')
+        if st.button(f'Analyze {q["ticker"]} in Full Dashboard →', type="primary", key="home_analyze_quote"):
+            st.session_state.selected_ticker = q["ticker"]
+            st.session_state.options_ticker = q["ticker"]
+            st.session_state.active_section = "Price vs EPS"
+            st.rerun()
+    except Exception as exc:
+        st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
+
+    st.markdown('<div class="section-title">Major markets</div><div class="section-copy">Click any market to load its quote above.</div>', unsafe_allow_html=True)
+    market_assets = [("S&P 500","^GSPC"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F"),("Brent Oil","BZ=F")]
+    market_cols = st.columns(6)
+    for col, (label, symbol) in zip(market_cols, market_assets):
+        with col:
+            try:
+                mq = quick_quote(symbol)
+                delta = "" if mq["change_pct"] is None else f'{mq["change_pct"]:+.2f}%'
+                st.metric(label, money(mq["price"]), delta)
+            except Exception:
+                st.metric(label, "Unavailable")
+            if st.button("View", key=f"market_{symbol}", use_container_width=True):
+                st.session_state.home_quote_ticker = symbol
+                st.rerun()
+
+    st.markdown('<div class="section-title">Top 10 most actively traded</div><div class="section-copy">Ranked by reported trading volume. Click a symbol to update the instant quote.</div>', unsafe_allow_html=True)
+    try:
+        active = most_active_quotes()
+        for rank, row in enumerate(active, 1):
+            a,b,c,d,e = st.columns([.5,1.2,3,1.4,1.2])
+            a.write(f"**{rank}**")
+            if b.button(row["ticker"], key=f"active_{rank}_{row['ticker']}", use_container_width=True):
+                st.session_state.home_quote_ticker = row["ticker"]
+                st.rerun()
+            c.write(row["name"])
+            d.write(money(row["price"]))
+            pct = row.get("change_pct")
+            e.write("N/A" if pct is None else f"{pct:+.2f}%")
+    except Exception as exc:
+        st.info(f"Most-active data is temporarily unavailable: {exc}")
+
     st.markdown("""
     <div class="feature-grid">
-      <div class="feature-card"><div class="feature-icon">📈</div><h3>Price vs. EPS</h3><p>Compare market price with earnings-driven fair value and see valuation gaps directly on an interactive chart.</p></div>
-      <div class="feature-card"><div class="feature-icon">👑</div><h3>Curated Watchlists</h3><p>Explore Dividend Kings, leading technology stocks, semiconductors and other focused groups with one-click chart loading.</p></div>
-      <div class="feature-card"><div class="feature-icon">🎯</div><h3>Options Finder</h3><p>Filter contracts by annualized return, days to expiration, estimated delta and trading volume.</p></div>
-      <div class="feature-card"><div class="feature-icon">📊</div><h3>Technical Context</h3><p>Use Bollinger Bands, RSI and multiple chart windows to understand momentum around the valuation story.</p></div>
-      <div class="feature-card"><div class="feature-icon">💼</div><h3>Paper Trading</h3><p>Record hypothetical buys and sells, track open positions and review realized and unrealized performance.</p></div>
-      <div class="feature-card"><div class="feature-icon">🧪</div><h3>Backtesting</h3><p>Test historical buy-and-hold results and evaluate the effect of reinvesting dividends over time.</p></div>
+      <div class="feature-card"><div class="feature-icon">📈</div><h3>Price vs. EPS</h3><p>Compare market price with earnings-driven fair value on an interactive chart.</p></div>
+      <div class="feature-card"><div class="feature-icon">👑</div><h3>Curated Watchlists</h3><p>Load Dividend Kings and other focused lists into the chart with one click.</p></div>
+      <div class="feature-card"><div class="feature-icon">🎯</div><h3>Options Finder</h3><p>Filter contracts by return, expiration, estimated delta and volume.</p></div>
     </div>
-    <div class="proofbar"><div class="proof"><b>5</b>Integrated research tools</div><div class="proof"><b>7</b>Curated stock groups</div><div class="proof"><b>1-click</b>Watchlist-to-chart flow</div><div class="proof"><b>Free</b>Public web access</div></div>
-    <div class="site-footer"><b>Stock EPS Fair Value Tool</b><br>For educational and informational purposes only. Market data may be delayed, incomplete or inaccurate. Nothing presented is investment advice or a recommendation to buy or sell any security.</div>
+    <div class="site-footer"><b>Stock EPS Fair Value Tool</b><br>For educational and informational purposes only. Quotes may be delayed, incomplete or inaccurate. Nothing presented is investment advice or a recommendation to buy or sell any security.</div>
     """, unsafe_allow_html=True)
-
 
 init_db()
 for key, value in {
