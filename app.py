@@ -33,17 +33,17 @@ div.stButton > button {
 }
 .hero:before {content:"";position:absolute;width:480px;height:480px;border-radius:50%;right:-120px;top:-190px;background:radial-gradient(circle,rgba(34,211,238,.35),rgba(37,99,235,0));}
 .hero:after {content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(to right,transparent 0%,black 55%);}
-.hero-copy {position:relative;z-index:2;max-width:640px;padding-top:8px;}
+.hero-copy {position:relative;z-index:2;max-width:720px;padding-top:8px;padding-right:250px;}
 .eyebrow {display:inline-block;padding:7px 12px;border:1px solid rgba(255,255,255,.22);border-radius:999px;background:rgba(255,255,255,.08);font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;}
 .hero h1 {font-size:4rem;line-height:1.02;letter-spacing:-.055em;margin:22px 0 18px;max-width:740px;}
 .hero p {font-size:1.15rem;line-height:1.65;color:rgba(255,255,255,.78);max-width:600px;}
-.market-card {position:absolute;z-index:3;right:55px;top:85px;width:360px;padding:22px;border:1px solid rgba(255,255,255,.16);border-radius:20px;background:rgba(7,18,38,.68);backdrop-filter:blur(15px);box-shadow:0 24px 70px rgba(0,0,0,.3);}
+.market-card {position:absolute;z-index:3;right:24px;top:24px;width:255px;padding:15px;border:1px solid rgba(255,255,255,.16);border-radius:20px;background:rgba(7,18,38,.68);backdrop-filter:blur(15px);box-shadow:0 24px 70px rgba(0,0,0,.3);}
 .market-card .ticker {display:flex;justify-content:space-between;align-items:end;margin-bottom:12px;}
-.market-card .price {font-size:2rem;font-weight:850;}
+.market-card .price {font-size:1.45rem;font-weight:850;}
 .market-card .gain {color:#5ee8a5;font-weight:750;}
-.spark {width:100%;height:160px;}
-.statrow {display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px;}
-.stat {padding:10px;border-radius:12px;background:rgba(255,255,255,.06);font-size:.72rem;color:rgba(255,255,255,.6);}
+.spark {width:100%;height:105px;}
+.statrow {display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:8px;}
+.stat {padding:7px;border-radius:10px;background:rgba(255,255,255,.06);font-size:.72rem;color:rgba(255,255,255,.6);}
 .stat b {display:block;color:white;font-size:.9rem;margin-top:3px;}
 .section-title {font-size:2rem;font-weight:850;letter-spacing:-.035em;margin:22px 0 6px;}
 .section-copy {opacity:.72;margin-bottom:24px;}
@@ -56,7 +56,7 @@ div.stButton > button {
 .proof {text-align:center;font-size:.78rem;opacity:.72;}.proof b {display:block;font-size:1.35rem;opacity:1;margin-bottom:4px;}
 .site-footer {padding:24px 4px 4px;border-top:1px solid rgba(128,128,128,.22);font-size:.78rem;opacity:.65;line-height:1.55;}
 .market-strip {display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:12px 0 24px;}
-@media (max-width: 1000px) {.hero{padding:42px 28px;min-height:auto}.hero h1{font-size:2.8rem}.market-card{position:relative;right:auto;top:auto;width:auto;margin-top:35px}.feature-grid{grid-template-columns:1fr}.proofbar{grid-template-columns:1fr 1fr}}
+@media (max-width: 1000px) {.hero{padding:42px 28px;min-height:auto}.hero-copy{padding-right:0}.hero h1{font-size:2.8rem}.market-card{position:relative;right:auto;top:auto;width:auto;margin-top:35px}.feature-grid{grid-template-columns:1fr}.proofbar{grid-template-columns:1fr 1fr}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -508,8 +508,8 @@ def render_homepage():
         st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
 
     st.markdown('<div class="section-title">Major markets</div><div class="section-copy">Click any market to load its quote above.</div>', unsafe_allow_html=True)
-    market_assets = [("S&P 500","^GSPC"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F"),("Brent Oil","BZ=F")]
-    market_cols = st.columns(6)
+    market_assets = [("S&P 500","^GSPC"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
+    market_cols = st.columns(5)
     for col, (label, symbol) in zip(market_cols, market_assets):
         with col:
             try:
