@@ -11,7 +11,7 @@ from plotly.subplots import make_subplots
 import streamlit as st
 import yfinance as yf
 
-st.set_page_config(page_title="Stock_EPS_Fair_Value_Tool", page_icon="📈", layout="wide")
+st.set_page_config(page_title="STOCKFAIRVALUE", page_icon="📈", layout="wide")
 
 st.markdown("""
 <style>
@@ -408,12 +408,34 @@ def quick_quote(ticker: str):
     previous = sf(info.get("previousClose")) or (sf(closes.iloc[-2]) if len(closes) > 1 else None)
     change = (price - previous) if price is not None and previous is not None else None
     change_pct = (change / previous * 100) if change is not None and previous else None
+    day_low = sf(info.get("dayLow")) or sf(info.get("regularMarketDayLow"))
+    day_high = sf(info.get("dayHigh")) or sf(info.get("regularMarketDayHigh"))
+    earnings_ts = info.get("earningsTimestamp") or info.get("earningsTimestampStart")
+    earnings_date = None
+    if earnings_ts:
+        try:
+            earnings_date = datetime.fromtimestamp(int(earnings_ts)).strftime("%b %d, %Y")
+        except Exception:
+            earnings_date = None
     return {
         "ticker": ticker, "name": info.get("shortName") or info.get("longName") or ticker,
+        "exchange": info.get("fullExchangeName") or info.get("exchange") or "",
+        "currency": info.get("currency") or "USD",
         "price": price, "change": change, "change_pct": change_pct,
+        "previous_close": previous,
+        "open": sf(info.get("open")) or sf(info.get("regularMarketOpen")),
+        "bid": sf(info.get("bid")), "bid_size": sf(info.get("bidSize")),
+        "ask": sf(info.get("ask")), "ask_size": sf(info.get("askSize")),
+        "day_low": day_low, "day_high": day_high,
+        "week52_low": sf(info.get("fiftyTwoWeekLow")),
+        "week52_high": sf(info.get("fiftyTwoWeekHigh")),
         "volume": sf(info.get("volume")) or sf(info.get("regularMarketVolume")),
-        "market_cap": sf(info.get("marketCap")), "pe": sf(info.get("trailingPE")),
-        "eps": sf(info.get("trailingEps")), "dividend_yield": (sf(info.get("dividendYield")) or 0) * 100,
+        "avg_volume": sf(info.get("averageVolume")) or sf(info.get("averageDailyVolume3Month")),
+        "market_cap": sf(info.get("marketCap")), "beta": sf(info.get("beta")),
+        "pe": sf(info.get("trailingPE")), "eps": sf(info.get("trailingEps")),
+        "earnings_date": earnings_date,
+        "dividend_rate": sf(info.get("dividendRate")),
+        "dividend_yield": (sf(info.get("dividendYield")) or 0) * 100,
     }
 
 
@@ -491,14 +513,48 @@ def render_homepage():
     quote_ticker = st.session_state.get("home_quote_ticker", "AAPL")
     try:
         q = quick_quote(quote_ticker)
-        c1,c2,c3,c4,c5,c6 = st.columns(6)
-        delta = None if q["change"] is None else f'{q["change"]:+.2f} ({q["change_pct"]:+.2f}%)'
-        c1.metric(q["ticker"], money(q["price"]), delta)
-        c2.metric("Volume", compact_number(q["volume"]))
-        c3.metric("Market Cap", compact_number(q["market_cap"]))
-        c4.metric("P/E", "N/A" if q["pe"] is None else f'{q["pe"]:.2f}')
-        c5.metric("EPS", "N/A" if q["eps"] is None else f'${q["eps"]:.2f}')
-        c6.metric("Dividend Yield", f'{q["dividend_yield"]:.2f}%')
+        change_text = "N/A" if q["change"] is None else f'{q["change"]:+.2f}'
+        change_pct_text = "N/A" if q["change_pct"] is None else f'{q["change_pct"]:+.2f}%'
+        exchange_line = " • ".join(x for x in [q.get("exchange"), q.get("currency")] if x)
+        st.markdown(
+            f"""
+            <div style="padding:22px 24px;border:1px solid rgba(128,128,128,.24);border-radius:16px;background:rgba(128,128,128,.035);margin:8px 0 18px">
+              <div style="font-size:1.55rem;font-weight:800;letter-spacing:-.02em">{q['name']} ({q['ticker']})</div>
+              <div style="opacity:.65;font-size:.84rem;margin-top:2px">{exchange_line}</div>
+              <div style="display:flex;align-items:baseline;gap:14px;margin-top:14px;flex-wrap:wrap">
+                <span style="font-size:2.75rem;font-weight:850;letter-spacing:-.045em">{money(q['price'])}</span>
+                <span style="font-size:1.08rem;font-weight:750">{change_text} ({change_pct_text})</span>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        left_stats, right_stats = st.columns(2, gap="large")
+        with left_stats:
+            left_rows = [
+                ("Previous Close", money(q["previous_close"])),
+                ("Open", money(q["open"])),
+                ("Bid", "N/A" if q["bid"] is None else f'{money(q["bid"])} x {int(q["bid_size"] or 0)}'),
+                ("Ask", "N/A" if q["ask"] is None else f'{money(q["ask"])} x {int(q["ask_size"] or 0)}'),
+                ("Day's Range", "N/A" if q["day_low"] is None or q["day_high"] is None else f'{money(q["day_low"])} - {money(q["day_high"])}'),
+                ("52 Week Range", "N/A" if q["week52_low"] is None or q["week52_high"] is None else f'{money(q["week52_low"])} - {money(q["week52_high"])}'),
+            ]
+            for label, value in left_rows:
+                st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
+        with right_stats:
+            dividend_text = "N/A" if q["dividend_rate"] is None else f'{money(q["dividend_rate"])} ({q["dividend_yield"]:.2f}%)'
+            right_rows = [
+                ("Volume", compact_number(q["volume"])),
+                ("Avg. Volume", compact_number(q["avg_volume"])),
+                ("Market Cap", compact_number(q["market_cap"])),
+                ("Beta (5Y Monthly)", "N/A" if q["beta"] is None else f'{q["beta"]:.2f}'),
+                ("PE Ratio (TTM)", "N/A" if q["pe"] is None else f'{q["pe"]:.2f}'),
+                ("EPS (TTM)", "N/A" if q["eps"] is None else money(q["eps"])),
+                ("Earnings Date", q["earnings_date"] or "N/A"),
+                ("Forward Dividend & Yield", dividend_text),
+            ]
+            for label, value in right_rows:
+                st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
         if st.button(f'Analyze {q["ticker"]} in Full Dashboard →', type="primary", key="home_analyze_quote"):
             st.session_state.selected_ticker = q["ticker"]
             st.session_state.options_ticker = q["ticker"]
@@ -514,7 +570,7 @@ def render_homepage():
         with col:
             try:
                 mq = quick_quote(symbol)
-                delta = "" if mq["change_pct"] is None else f'{mq["change_pct"]:+.2f}%'
+                delta = "" if mq["change"] is None else f'{mq["change"]:+.2f}'
                 st.metric(label, money(mq["price"]), delta)
             except Exception:
                 st.metric(label, "Unavailable")
@@ -544,7 +600,7 @@ def render_homepage():
       <div class="feature-card"><div class="feature-icon">👑</div><h3>Curated Watchlists</h3><p>Load Dividend Kings and other focused lists into the chart with one click.</p></div>
       <div class="feature-card"><div class="feature-icon">🎯</div><h3>Options Finder</h3><p>Filter contracts by return, expiration, estimated delta and volume.</p></div>
     </div>
-    <div class="site-footer"><b>Stock EPS Fair Value Tool</b><br>For educational and informational purposes only. Quotes may be delayed, incomplete or inaccurate. Nothing presented is investment advice or a recommendation to buy or sell any security.</div>
+    <div class="site-footer"><b>STOCKFAIRVALUE</b><br>For educational and informational purposes only. Quotes may be delayed, incomplete or inaccurate. Nothing presented is investment advice or a recommendation to buy or sell any security.</div>
     """, unsafe_allow_html=True)
 
 init_db()
@@ -564,7 +620,7 @@ if "pending_watchlist_ticker" in st.session_state:
 
 st.session_state.setdefault("active_section", "Home")
 
-st.markdown('<div class="brandbar"><div><div class="brandname">Stock EPS Fair Value Tool</div><div class="brandtag">Research • Valuation • Technicals</div></div><div class="brandtag">Market intelligence, simplified</div></div>', unsafe_allow_html=True)
+st.markdown('<div class="brandbar"><div><div class="brandname">STOCKFAIRVALUE</div><div class="brandtag">Research • Valuation • Technicals</div></div><div class="brandtag">Market intelligence, simplified</div></div>', unsafe_allow_html=True)
 
 section_names = [
     ("⌂", "Home"),
