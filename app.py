@@ -574,9 +574,6 @@ def render_homepage():
                 st.metric(label, money(mq["price"]), delta)
             except Exception:
                 st.metric(label, "Unavailable")
-            if st.button("View", key=f"market_{symbol}", use_container_width=True):
-                st.session_state.home_quote_ticker = symbol
-                st.rerun()
 
     st.markdown('<div class="section-title">Top 10 most actively traded</div><div class="section-copy">Ranked by reported trading volume. Click a symbol to update the instant quote.</div>', unsafe_allow_html=True)
     try:
