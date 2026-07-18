@@ -11,7 +11,7 @@ from plotly.subplots import make_subplots
 import streamlit as st
 import yfinance as yf
 
-st.set_page_config(page_title="STOCKFAIRVALUE", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Stock_EPS_Fair_Value_Tool", page_icon="📈", layout="wide")
 
 st.markdown("""
 <style>
@@ -56,6 +56,11 @@ div.stButton > button {
 .proof {text-align:center;font-size:.78rem;opacity:.72;}.proof b {display:block;font-size:1.35rem;opacity:1;margin-bottom:4px;}
 .site-footer {padding:24px 4px 4px;border-top:1px solid rgba(128,128,128,.22);font-size:.78rem;opacity:.65;line-height:1.55;}
 .market-strip {display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:12px 0 24px;}
+/* Keep dashboard metric values readable and prevent clipping. */
+[data-testid="stMetric"] {min-width:0; overflow:visible;}
+[data-testid="stMetricLabel"] {font-size:.82rem; line-height:1.15;}
+[data-testid="stMetricValue"] {font-size:1.45rem; line-height:1.15; white-space:normal; overflow-wrap:anywhere;}
+[data-testid="stMetricDelta"] {font-size:.78rem;}
 @media (max-width: 1000px) {.hero{padding:42px 28px;min-height:auto}.hero-copy{padding-right:0}.hero h1{font-size:2.8rem}.market-card{position:relative;right:auto;top:auto;width:auto;margin-top:35px}.feature-grid{grid-template-columns:1fr}.proofbar{grid-template-columns:1fr 1fr}}
 </style>
 """, unsafe_allow_html=True)
@@ -473,11 +478,23 @@ def compact_number(value):
     return f"{value:,.0f}"
 
 def render_homepage():
+    st.markdown('<div class="section-title">Major markets</div><div class="section-copy">Click any market to load its quote above.</div>', unsafe_allow_html=True)
+    market_assets = [("S&P 500","^GSPC"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
+    market_cols = st.columns(5)
+    for col, (label, symbol) in zip(market_cols, market_assets):
+        with col:
+            try:
+                mq = quick_quote(symbol)
+                delta = "" if mq["change"] is None else f'{mq["change"]:+.2f}'
+                st.metric(label, money(mq["price"]), delta)
+            except Exception:
+                st.metric(label, "Unavailable")
+
     st.markdown("""
     <section class="hero">
       <div class="hero-copy">
         <span class="eyebrow">Live markets + smarter valuation</span>
-        <h1>Stock Fair Value in One Click.</h1>
+        <h1>Markets at a glance. Fair value in one click.</h1>
         <p>Check stocks, Bitcoin, major indexes and oil, then move directly into earnings-based valuation and technical analysis.</p>
       </div>
       <div class="market-card">
@@ -563,18 +580,6 @@ def render_homepage():
     except Exception as exc:
         st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
 
-    st.markdown('<div class="section-title">Major markets</div><div class="section-copy">Click any market to load its quote above.</div>', unsafe_allow_html=True)
-    market_assets = [("S&P 500","^GSPC"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
-    market_cols = st.columns(5)
-    for col, (label, symbol) in zip(market_cols, market_assets):
-        with col:
-            try:
-                mq = quick_quote(symbol)
-                delta = "" if mq["change"] is None else f'{mq["change"]:+.2f}'
-                st.metric(label, money(mq["price"]), delta)
-            except Exception:
-                st.metric(label, "Unavailable")
-
     st.markdown('<div class="section-title">Top 10 most actively traded</div><div class="section-copy">Ranked by reported trading volume. Click a symbol to update the instant quote.</div>', unsafe_allow_html=True)
     try:
         active = most_active_quotes()
@@ -597,7 +602,7 @@ def render_homepage():
       <div class="feature-card"><div class="feature-icon">👑</div><h3>Curated Watchlists</h3><p>Load Dividend Kings and other focused lists into the chart with one click.</p></div>
       <div class="feature-card"><div class="feature-icon">🎯</div><h3>Options Finder</h3><p>Filter contracts by return, expiration, estimated delta and volume.</p></div>
     </div>
-    <div class="site-footer"><b>STOCKFAIRVALUE</b><br>For educational and informational purposes only. Quotes may be delayed, incomplete or inaccurate. Nothing presented is investment advice or a recommendation to buy or sell any security.</div>
+    <div class="site-footer"><b>Stock EPS Fair Value Tool</b><br>For educational and informational purposes only. Quotes may be delayed, incomplete or inaccurate. Nothing presented is investment advice or a recommendation to buy or sell any security.</div>
     """, unsafe_allow_html=True)
 
 init_db()
@@ -617,7 +622,7 @@ if "pending_watchlist_ticker" in st.session_state:
 
 st.session_state.setdefault("active_section", "Home")
 
-st.markdown('<div class="brandbar"><div><div class="brandname">STOCKFAIRVALUE</div><div class="brandtag">Research • Valuation • Technicals</div></div><div class="brandtag">Market intelligence, simplified</div></div>', unsafe_allow_html=True)
+st.markdown('<div class="brandbar"><div><div class="brandname">Stock EPS Fair Value Tool</div><div class="brandtag">Research • Valuation • Technicals</div></div><div class="brandtag">Market intelligence, simplified</div></div>', unsafe_allow_html=True)
 
 section_names = [
     ("⌂", "Home"),
@@ -747,10 +752,11 @@ if active_section == "Watchlists":
 if active_section == "Paper Trading":
     trades = load_trades()
     cash, mv, account, realized, unrealized, positions = portfolio_summary(trades)
-    a, b, c, d, e = st.columns(5)
+    a, b, c = st.columns(3)
     a.metric("Cash", f"${cash:,.2f}")
     b.metric("Positions", f"${mv:,.2f}")
     c.metric("Account Value", f"${account:,.2f}")
+    d, e = st.columns(2)
     d.metric("Unrealized P&L", f"${unrealized:,.2f}")
     e.metric("Realized P&L", f"${realized:,.2f}")
 
@@ -845,29 +851,69 @@ if active_section == "Backtesting":
 
 if active_section == "Options Finder":
     st.subheader("Options Finder")
+
+    def reset_options_filters():
+        defaults = {
+            "options_ticker": "AAPL",
+            "options_side": "Puts",
+            "options_min_ann": 24.0,
+            "options_max_ann": 30.0,
+            "options_min_volume": 25,
+            "options_target_dte": 45,
+            "options_max_delta": 0.18,
+        }
+        for key, value in defaults.items():
+            st.session_state[key] = value
+        st.session_state.pop("options_results", None)
+
+    _, reset_col = st.columns([5, 1])
+    with reset_col:
+        st.button("Reset Filters", on_click=reset_options_filters, use_container_width=True)
+
     o1, o2, o3, o4, o5 = st.columns(5)
-    oticker = o1.text_input("Ticker", key="options_ticker").upper().strip()
-    side_label = o2.selectbox("Contracts", ["Puts", "Calls"])
-    min_ann = o3.number_input("Min annual return %", value=24.0, step=1.0)
-    max_ann = o4.number_input("Max annual return %", value=30.0, step=1.0)
-    min_volume = o5.number_input("Minimum volume", value=25, min_value=0, step=1)
-    d1, d2, d3 = st.columns(3)
-    min_dte = d1.number_input("Min DTE", value=30, min_value=0, step=1)
-    max_dte = d2.number_input("Max DTE", value=45, min_value=1, step=1)
-    max_delta = d3.number_input("Maximum absolute Delta", value=0.18, min_value=0.01, max_value=1.0, step=0.01)
+    oticker = o1.text_input("Ticker", value="AAPL", key="options_ticker").upper().strip()
+    side_label = o2.selectbox("Contracts", ["Puts", "Calls"], key="options_side")
+    min_ann = o3.number_input("Min annual return %", value=24.0, step=1.0, key="options_min_ann")
+    max_ann = o4.number_input("Max annual return %", value=30.0, step=1.0, key="options_max_ann")
+    min_volume = o5.number_input("Minimum volume", value=25, min_value=0, step=1, key="options_min_volume")
+
+    d1, d2 = st.columns(2)
+    target_dte = d1.number_input("Target DTE", value=45, min_value=1, step=1, key="options_target_dte")
+    max_delta = d2.number_input(
+        "Maximum absolute Delta", value=0.18, min_value=0.01,
+        max_value=1.0, step=0.01, key="options_max_delta"
+    )
 
     if st.button("Find Options", type="primary"):
         try:
+            if not oticker:
+                raise ValueError("Enter a ticker symbol.")
+
             spot = valuation(oticker)["Price"]
+            if not spot:
+                raise ValueError("Current stock price is unavailable.")
+
             expirations = option_expirations(oticker)
-            rows = []
             today = date.today()
-            side = side_label.lower()
+            dated_expirations = []
             for exp in expirations:
                 exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
                 dte = (exp_date - today).days
-                if dte < min_dte or dte > max_dte:
-                    continue
+                if dte > 0:
+                    dated_expirations.append((exp, dte))
+
+            if not dated_expirations:
+                raise ValueError("No future option expirations were returned.")
+
+            closest_distance = min(abs(dte - target_dte) for _, dte in dated_expirations)
+            selected_expirations = [
+                (exp, dte) for exp, dte in dated_expirations
+                if abs(dte - target_dte) == closest_distance
+            ]
+
+            rows = []
+            side = side_label.lower()
+            for exp, dte in selected_expirations:
                 chain = option_chain(oticker, exp, side)
                 for _, r in chain.iterrows():
                     bid, ask = sf(r.get("bid")), sf(r.get("ask"))
@@ -876,38 +922,69 @@ if active_section == "Options Finder":
                     iv = sf(r.get("impliedVolatility"))
                     if bid is None or ask is None or strike is None or ask < bid or volume < min_volume:
                         continue
+
                     mid_price = (bid + ask) / 2
                     if mid_price <= 0:
                         continue
+
                     delta = option_delta_estimate(spot, strike, dte, iv, side)
                     if delta is not None and abs(delta) > max_delta:
                         continue
+
                     collateral = strike if side == "puts" else spot
                     ann_return = (mid_price / collateral) * (365 / dte) * 100 if collateral and dte else None
                     if ann_return is None or not (min_ann <= ann_return <= max_ann):
                         continue
+
                     breakeven = strike - mid_price if side == "puts" else strike + mid_price
                     rows.append({
-                        "Expiration": exp, "DTE": dte, "Strike": strike,
-                        "Bid": bid, "Ask": ask, "Mid": mid_price, "Delta": delta,
-                        "IV %": iv * 100 if iv else None, "Volume": int(volume),
+                        "Expiration": exp,
+                        "DTE": dte,
+                        "Strike": strike,
+                        "Bid": bid,
+                        "Ask": ask,
+                        "Mid": mid_price,
+                        "Dollar Profit": mid_price * 100,
+                        "Delta": delta,
+                        "IV %": iv * 100 if iv else None,
+                        "Volume": int(volume),
                         "Open Interest": int(sf(r.get("openInterest")) or 0),
-                        "Annualized Return %": ann_return, "Break-even": breakeven,
+                        "Annualized Return %": ann_return,
+                        "Break-even": breakeven,
                         "Contract": r.get("contractSymbol"),
                     })
-            results = pd.DataFrame(rows).sort_values("Annualized Return %", ascending=False) if rows else pd.DataFrame()
-            if results.empty:
-                st.warning("No contracts matched the current filters.")
-            else:
-                st.dataframe(results, use_container_width=True, hide_index=True, column_config={
-                    "Strike": st.column_config.NumberColumn(format="$%.2f"), "Bid": st.column_config.NumberColumn(format="$%.2f"),
-                    "Ask": st.column_config.NumberColumn(format="$%.2f"), "Mid": st.column_config.NumberColumn(format="$%.2f"),
-                    "Delta": st.column_config.NumberColumn(format="%.3f"), "IV %": st.column_config.NumberColumn(format="%.2f%%"),
-                    "Annualized Return %": st.column_config.NumberColumn(format="%.2f%%"), "Break-even": st.column_config.NumberColumn(format="$%.2f")
-                })
-                st.download_button("Download CSV", results.to_csv(index=False), file_name=f"{oticker}_options.csv", mime="text/csv")
+
+            results = (
+                pd.DataFrame(rows).sort_values("Annualized Return %", ascending=False)
+                if rows else pd.DataFrame()
+            )
+            st.session_state["options_results"] = results
         except Exception as exc:
+            st.session_state.pop("options_results", None)
             st.error(f"Options search failed: {exc}")
+
+    results = st.session_state.get("options_results")
+    if isinstance(results, pd.DataFrame):
+        if results.empty:
+            st.warning("No contracts matched the current filters.")
+        else:
+            st.dataframe(results, use_container_width=True, hide_index=True, column_config={
+                "Strike": st.column_config.NumberColumn(format="$%.2f"),
+                "Bid": st.column_config.NumberColumn(format="$%.2f"),
+                "Ask": st.column_config.NumberColumn(format="$%.2f"),
+                "Mid": st.column_config.NumberColumn(format="$%.2f"),
+                "Dollar Profit": st.column_config.NumberColumn(format="$%.2f"),
+                "Delta": st.column_config.NumberColumn(format="%.3f"),
+                "IV %": st.column_config.NumberColumn(format="%.2f%%"),
+                "Annualized Return %": st.column_config.NumberColumn(format="%.2f%%"),
+                "Break-even": st.column_config.NumberColumn(format="$%.2f"),
+            })
+            st.download_button(
+                "Download CSV",
+                results.to_csv(index=False),
+                file_name=f"{oticker}_options.csv",
+                mime="text/csv",
+            )
 
 st.divider()
 st.caption("Educational use only. This application does not provide investment advice or place brokerage orders.")
