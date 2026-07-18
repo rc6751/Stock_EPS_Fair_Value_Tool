@@ -12,26 +12,21 @@ import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
 
-st.set_page_config(page_title="STOCK FAIR VALUE TOOL", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Stock_EPS_Fair_Value_Tool", page_icon="📈", layout="wide")
 
-# Keep the app at the top on a fresh page load.
+# Keep the app at the top after an initial load or Streamlit rerun.
 components.html(
     """<script>
-    try {
-        const parentDoc = window.parent.document;
-        const scrollTop = () => {
-            window.parent.scrollTo(0, 0);
-            const main = parentDoc.querySelector('section.main');
-            if (main) main.scrollTop = 0;
-            const active = parentDoc.activeElement;
-            if (active && typeof active.blur === 'function') active.blur();
-        };
-        if (!window.parent.__stockfairvalue_top_reset__) {
-            window.parent.__stockfairvalue_top_reset__ = true;
-            requestAnimationFrame(scrollTop);
-            setTimeout(scrollTop, 75);
-        }
-    } catch (e) {}
+    const scrollTop = () => {
+        try {
+            window.parent.scrollTo({top: 0, left: 0, behavior: 'instant'});
+            const main = window.parent.document.querySelector('section.main');
+            if (main) main.scrollTo({top: 0, left: 0, behavior: 'instant'});
+        } catch (e) {}
+    };
+    scrollTop();
+    setTimeout(scrollTop, 50);
+    setTimeout(scrollTop, 250);
     </script>""",
     height=0,
 )
@@ -46,16 +41,16 @@ div.stButton > button {
 }
 /* Compact metric cards across valuation and account summaries. */
 [data-testid="stMetric"] {
-    padding: .18rem .28rem;
+    padding: .35rem .45rem;
     min-height: 0;
 }
 [data-testid="stMetricLabel"] {
-    font-size: .60rem;
+    font-size: .68rem;
     line-height: 1.05;
     margin-bottom: .05rem;
 }
 [data-testid="stMetricValue"] {
-    font-size: .88rem;
+    font-size: 1.05rem;
     line-height: 1.08;
     white-space: nowrap;
 }
@@ -69,9 +64,9 @@ div.stButton > button {
 .brandname {font-weight:850;font-size:1.15rem;letter-spacing:-.02em;}
 .brandtag {font-size:.78rem;opacity:.7;}
 .hero {
-  position:relative; overflow:hidden; min-height:520px; border-radius:24px; padding:64px 62px;
+  position:relative; overflow:hidden; min-height:340px; border-radius:24px; padding:42px 50px 24px;
   background:linear-gradient(135deg,#071226 0%,#102451 52%,#0a3a5e 100%);
-  color:white; box-shadow:0 24px 70px rgba(4,18,48,.22); margin:8px 0 28px;
+  color:white; box-shadow:0 24px 70px rgba(4,18,48,.22); margin:8px 0 12px;
 }
 .hero:before {content:"";position:absolute;width:480px;height:480px;border-radius:50%;right:-120px;top:-190px;background:radial-gradient(circle,rgba(34,211,238,.35),rgba(37,99,235,0));}
 .hero:after {content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(to right,transparent 0%,black 55%);}
@@ -79,11 +74,11 @@ div.stButton > button {
 .eyebrow {display:inline-block;padding:7px 12px;border:1px solid rgba(255,255,255,.22);border-radius:999px;background:rgba(255,255,255,.08);font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;}
 .hero h1 {font-size:4rem;line-height:1.02;letter-spacing:-.055em;margin:22px 0 18px;max-width:740px;}
 .hero p {font-size:1.15rem;line-height:1.65;color:rgba(255,255,255,.78);max-width:600px;}
-.market-card {position:absolute;z-index:3;right:24px;top:24px;width:255px;padding:15px;border:1px solid rgba(255,255,255,.16);border-radius:20px;background:rgba(7,18,38,.68);backdrop-filter:blur(15px);box-shadow:0 24px 70px rgba(0,0,0,.3);}
+.market-card {position:absolute;z-index:3;right:24px;top:24px;width:360px;padding:24px;border:1px solid rgba(255,255,255,.16);border-radius:20px;background:rgba(7,18,38,.68);backdrop-filter:blur(15px);box-shadow:0 24px 70px rgba(0,0,0,.3);}
 .market-card .ticker {display:flex;justify-content:space-between;align-items:end;margin-bottom:12px;}
-.market-card .price {font-size:1.45rem;font-weight:850;}
+.market-card .price {font-size:1.9rem;font-weight:850;}
 .market-card .gain {color:#5ee8a5;font-weight:750;}
-.spark {width:100%;height:105px;}
+.spark {width:100%;height:150px;}
 .statrow {display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:8px;}
 .stat {padding:7px;border-radius:10px;background:rgba(255,255,255,.06);font-size:.72rem;color:rgba(255,255,255,.6);}
 .stat b {display:block;color:white;font-size:.9rem;margin-top:3px;}
@@ -514,7 +509,6 @@ def compact_number(value):
             return f"{value/divisor:,.2f}{unit}"
     return f"{value:,.0f}"
 
-
 def render_navigation(key_prefix="nav"):
     nav_columns = st.columns(len(section_names), gap="small")
     for nav_col, (icon, section_name) in zip(nav_columns, section_names):
@@ -529,16 +523,27 @@ def render_navigation(key_prefix="nav"):
                 st.rerun()
 
 def render_homepage():
-    try:
-        render_major_markets()
-    except NameError:
-        pass
+    st.markdown('<div class="section-title">Major markets</div><div class="section-copy">Click any market to load its quote below.</div>', unsafe_allow_html=True)
+    market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
+    market_cols = st.columns(6)
+    for col, (label, symbol) in zip(market_cols, market_assets):
+        with col:
+            try:
+                mq = quick_quote(symbol)
+                delta = "" if mq["change"] is None else f'{mq["change"]:+.2f}'
+                st.metric(label, money(mq["price"]), delta)
+            except Exception:
+                st.metric(label, "Unavailable")
+            if st.button("View", key=f"market_{symbol}", use_container_width=True):
+                st.session_state.home_quote_ticker = symbol
+                st.rerun()
 
     st.markdown("""
     <section class="hero">
       <div class="hero-copy">
+        <span class="eyebrow">Research • Valuation • Technicals</span>
         <h1>STOCK FAIR VALUE TOOL</h1>
-        <p>Research • Valuation • Technicals</p>
+        <p>Check stocks, Bitcoin, major indexes and oil, then move directly into earnings-based valuation and technical analysis.</p>
       </div>
       <div class="market-card">
         <div class="ticker"><div><div style="opacity:.62;font-size:.78rem">MARKET INTELLIGENCE</div><b>Quote → Valuation → Decision</b></div></div>
@@ -562,10 +567,7 @@ def render_homepage():
         get_quote = st.button("Get Quote", type="primary", use_container_width=True, key="home_get_quote")
     if get_quote and home_ticker:
         st.session_state.home_quote_ticker = home_ticker
-    quote_ticker = st.session_state.get("home_quote_ticker", "")
-    if not quote_ticker:
-        st.info("Enter a ticker to load a market quote.")
-        return
+    quote_ticker = st.session_state.get("home_quote_ticker", "") or "^GSPC"
     try:
         q = quick_quote(quote_ticker)
         change_text = "N/A" if q["change"] is None else f'{q["change"]:+.2f}'
@@ -618,21 +620,6 @@ def render_homepage():
     except Exception as exc:
         st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
 
-    st.markdown('<div class="section-title">Major markets</div><div class="section-copy">Click any market to load its quote above.</div>', unsafe_allow_html=True)
-    market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
-    market_cols = st.columns(6)
-    for col, (label, symbol) in zip(market_cols, market_assets):
-        with col:
-            try:
-                mq = quick_quote(symbol)
-                delta = "" if mq["change"] is None else f'{mq["change"]:+.2f}'
-                st.metric(label, money(mq["price"]), delta)
-            except Exception:
-                st.metric(label, "Unavailable")
-            if st.button("View", key=f"market_{symbol}", use_container_width=True):
-                st.session_state.home_quote_ticker = symbol
-                st.rerun()
-
     st.markdown('<div class="section-title">Top 10 most actively traded</div><div class="section-copy">Ranked by reported trading volume. Click a symbol to update the instant quote.</div>', unsafe_allow_html=True)
     try:
         active = most_active_quotes()
@@ -675,10 +662,9 @@ section_names = [
     ("🧪", "Backtesting"),
     ("🔎", "Options Finder"),
 ]
-if st.session_state.active_section != "Home":
-    render_navigation("nav")
-
 active_section = st.session_state.active_section
+if active_section != "Home":
+    render_navigation("nav")
 
 ticker = st.session_state.selected_ticker.upper().strip()
 history_months = 3
@@ -840,7 +826,7 @@ if active_section == "Paper Trading":
                 con.execute("DELETE FROM trades WHERE id=?", (int(delete_id),))
                 con.commit()
             st.rerun()
-    new_cash = st.number_input("Starting cash", min_value=0.0, max_value=5_000_000.0, value=min(float(starting_cash()), 5_000_000.0), step=1000.0)
+    new_cash = st.number_input("Starting cash", min_value=0.0, value=float(starting_cash()), step=1000.0)
     if st.button("Save starting cash"):
         save_starting_cash(new_cash)
         st.success("Starting cash saved.")
@@ -931,10 +917,10 @@ if active_section == "Options Finder":
                         "Bid": bid, "Ask": ask, "Mid": mid_price, "Delta": delta,
                         "IV %": iv * 100 if iv else None, "Volume": int(volume),
                         "Open Interest": int(sf(r.get("openInterest")) or 0),
-                        "Ann. Ret.": ann_return, "Profit": mid_price * 100, "Break-even": breakeven,
+                        "Annualized Return %": ann_return, "Break-even": breakeven,
                         "Contract": r.get("contractSymbol"),
                     })
-            results = pd.DataFrame(rows).sort_values("Ann. Ret.", ascending=False) if rows else pd.DataFrame()
+            results = pd.DataFrame(rows).sort_values("Annualized Return %", ascending=False) if rows else pd.DataFrame()
             if results.empty:
                 st.warning("No contracts matched the current filters.")
             else:
@@ -942,9 +928,11 @@ if active_section == "Options Finder":
                     "Strike": st.column_config.NumberColumn(format="$%.2f"), "Bid": st.column_config.NumberColumn(format="$%.2f"),
                     "Ask": st.column_config.NumberColumn(format="$%.2f"), "Mid": st.column_config.NumberColumn(format="$%.2f"),
                     "Delta": st.column_config.NumberColumn(format="%.3f"), "IV %": st.column_config.NumberColumn(format="%.2f%%"),
-                    "Ann. Ret.": st.column_config.NumberColumn("Ann. Ret.", format="%.2f%%", width="small"), "Profit": st.column_config.NumberColumn("Profit", format="$%.2f", width="small"), "Break-even": st.column_config.NumberColumn(format="$%.2f")
+                    "Annualized Return %": st.column_config.NumberColumn(format="%.2f%%"), "Break-even": st.column_config.NumberColumn(format="$%.2f")
                 })
                 st.download_button("Download CSV", results.to_csv(index=False), file_name=f"{oticker}_options.csv", mime="text/csv")
         except Exception as exc:
             st.error(f"Options search failed: {exc}")
 
+st.divider()
+st.caption("Educational use only. This application does not provide investment advice or place brokerage orders.")
