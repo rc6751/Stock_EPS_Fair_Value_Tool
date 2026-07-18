@@ -12,26 +12,21 @@ import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
 
-st.set_page_config(page_title="STOCKFAIRVALUE", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Stock_EPS_Fair_Value_Tool", page_icon="📈", layout="wide")
 
-# Keep the app at the top on a fresh page load.
+# Keep the app at the top after an initial load or Streamlit rerun.
 components.html(
     """<script>
-    try {
-        const parentDoc = window.parent.document;
-        const scrollTop = () => {
-            window.parent.scrollTo(0, 0);
-            const main = parentDoc.querySelector('section.main');
-            if (main) main.scrollTop = 0;
-            const active = parentDoc.activeElement;
-            if (active && typeof active.blur === 'function') active.blur();
-        };
-        if (!window.parent.__stockfairvalue_top_reset__) {
-            window.parent.__stockfairvalue_top_reset__ = true;
-            requestAnimationFrame(scrollTop);
-            setTimeout(scrollTop, 75);
-        }
-    } catch (e) {}
+    const scrollTop = () => {
+        try {
+            window.parent.scrollTo({top: 0, left: 0, behavior: 'instant'});
+            const main = window.parent.document.querySelector('section.main');
+            if (main) main.scrollTo({top: 0, left: 0, behavior: 'instant'});
+        } catch (e) {}
+    };
+    scrollTop();
+    setTimeout(scrollTop, 50);
+    setTimeout(scrollTop, 250);
     </script>""",
     height=0,
 )
@@ -46,16 +41,16 @@ div.stButton > button {
 }
 /* Compact metric cards across valuation and account summaries. */
 [data-testid="stMetric"] {
-    padding: .18rem .28rem;
+    padding: .35rem .45rem;
     min-height: 0;
 }
 [data-testid="stMetricLabel"] {
-    font-size: .60rem;
+    font-size: .68rem;
     line-height: 1.05;
     margin-bottom: .05rem;
 }
 [data-testid="stMetricValue"] {
-    font-size: .88rem;
+    font-size: 1.05rem;
     line-height: 1.08;
     white-space: nowrap;
 }
@@ -69,9 +64,9 @@ div.stButton > button {
 .brandname {font-weight:850;font-size:1.15rem;letter-spacing:-.02em;}
 .brandtag {font-size:.78rem;opacity:.7;}
 .hero {
-  position:relative; overflow:hidden; min-height:520px; border-radius:24px; padding:64px 62px;
+  position:relative; overflow:hidden; min-height:340px; border-radius:24px; padding:42px 50px 24px;
   background:linear-gradient(135deg,#071226 0%,#102451 52%,#0a3a5e 100%);
-  color:white; box-shadow:0 24px 70px rgba(4,18,48,.22); margin:8px 0 28px;
+  color:white; box-shadow:0 24px 70px rgba(4,18,48,.22); margin:8px 0 12px;
 }
 .hero:before {content:"";position:absolute;width:480px;height:480px;border-radius:50%;right:-120px;top:-190px;background:radial-gradient(circle,rgba(34,211,238,.35),rgba(37,99,235,0));}
 .hero:after {content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(to right,transparent 0%,black 55%);}
@@ -79,11 +74,11 @@ div.stButton > button {
 .eyebrow {display:inline-block;padding:7px 12px;border:1px solid rgba(255,255,255,.22);border-radius:999px;background:rgba(255,255,255,.08);font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;}
 .hero h1 {font-size:4rem;line-height:1.02;letter-spacing:-.055em;margin:22px 0 18px;max-width:740px;}
 .hero p {font-size:1.15rem;line-height:1.65;color:rgba(255,255,255,.78);max-width:600px;}
-.market-card {position:absolute;z-index:3;right:24px;top:24px;width:255px;padding:15px;border:1px solid rgba(255,255,255,.16);border-radius:20px;background:rgba(7,18,38,.68);backdrop-filter:blur(15px);box-shadow:0 24px 70px rgba(0,0,0,.3);}
+.market-card {position:absolute;z-index:3;right:24px;top:24px;width:360px;padding:24px;border:1px solid rgba(255,255,255,.16);border-radius:20px;background:rgba(7,18,38,.68);backdrop-filter:blur(15px);box-shadow:0 24px 70px rgba(0,0,0,.3);}
 .market-card .ticker {display:flex;justify-content:space-between;align-items:end;margin-bottom:12px;}
-.market-card .price {font-size:1.45rem;font-weight:850;}
+.market-card .price {font-size:1.9rem;font-weight:850;}
 .market-card .gain {color:#5ee8a5;font-weight:750;}
-.spark {width:100%;height:105px;}
+.spark {width:100%;height:150px;}
 .statrow {display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:8px;}
 .stat {padding:7px;border-radius:10px;background:rgba(255,255,255,.06);font-size:.72rem;color:rgba(255,255,255,.6);}
 .stat b {display:block;color:white;font-size:.9rem;margin-top:3px;}
@@ -166,21 +161,8 @@ def init_db():
             action TEXT NOT NULL,
             ticker TEXT NOT NULL,
             shares REAL NOT NULL,
-            price REAL NOT NULL,
-            asset_type TEXT NOT NULL DEFAULT 'Stock',
-            multiplier REAL NOT NULL DEFAULT 1,
-            description TEXT NOT NULL DEFAULT '',
-            order_type TEXT NOT NULL DEFAULT 'Market'
+            price REAL NOT NULL
         )""")
-        existing_columns = {row[1] for row in con.execute("PRAGMA table_info(trades)").fetchall()}
-        if "asset_type" not in existing_columns:
-            con.execute("ALTER TABLE trades ADD COLUMN asset_type TEXT NOT NULL DEFAULT 'Stock'")
-        if "multiplier" not in existing_columns:
-            con.execute("ALTER TABLE trades ADD COLUMN multiplier REAL NOT NULL DEFAULT 1")
-        if "description" not in existing_columns:
-            con.execute("ALTER TABLE trades ADD COLUMN description TEXT NOT NULL DEFAULT ''")
-        if "order_type" not in existing_columns:
-            con.execute("ALTER TABLE trades ADD COLUMN order_type TEXT NOT NULL DEFAULT 'Market'")
         con.execute("INSERT OR IGNORE INTO settings(key,value) VALUES('starting_cash','100000')")
         con.commit()
 
@@ -418,60 +400,36 @@ def portfolio_summary(trades):
     cash = starting_cash()
     realized = 0.0
     positions = {}
-
     for _, r in trades.sort_values("id").iterrows():
-        ticker = str(r.get("ticker", "")).upper().strip()
-        asset_type = str(r.get("asset_type", "Stock") or "Stock")
-        description = str(r.get("description", "") or "")
-        quantity = float(r.get("shares", 0) or 0)
-        price = float(r.get("price", 0) or 0)
-        multiplier = float(r.get("multiplier", 1) or 1)
-        key = (asset_type, ticker, multiplier, description)
-        pos = positions.setdefault(key, {"quantity": 0.0, "cost": 0.0, "last_price": price})
-
-        if str(r.get("action", "")).upper() == "BUY":
-            cash -= quantity * price * multiplier
-            pos["quantity"] += quantity
-            pos["cost"] += quantity * price * multiplier
+        ticker = str(r.ticker).upper()
+        shares, price = float(r.shares), float(r.price)
+        if r.action == "BUY":
+            cash -= shares * price
+            pos = positions.setdefault(ticker, {"shares": 0.0, "cost": 0.0})
+            pos["shares"] += shares
+            pos["cost"] += shares * price
         else:
-            avg_contract_cost = pos["cost"] / pos["quantity"] if pos["quantity"] else 0
-            sold = min(quantity, pos["quantity"])
-            realized += sold * ((price * multiplier) - avg_contract_cost)
-            pos["quantity"] -= sold
-            pos["cost"] -= sold * avg_contract_cost
-            cash += sold * price * multiplier
-        pos["last_price"] = price
-
+            pos = positions.setdefault(ticker, {"shares": 0.0, "cost": 0.0})
+            avg = pos["cost"] / pos["shares"] if pos["shares"] else 0
+            sold = min(shares, pos["shares"])
+            realized += sold * (price - avg)
+            pos["shares"] -= sold
+            pos["cost"] -= sold * avg
+            cash += shares * price
     rows, market_value, unrealized = [], 0.0, 0.0
-    for (asset_type, ticker, multiplier, description), pos in positions.items():
-        if pos["quantity"] <= 1e-9:
+    for ticker, pos in positions.items():
+        if pos["shares"] <= 1e-9:
             continue
-
-        current_price = pos["last_price"]
         try:
-            quoted = quick_quote(ticker)["price"]
-            if quoted is not None:
-                current_price = float(quoted)
+            price = valuation(ticker)["Price"] or 0
         except Exception:
-            pass
-
-        avg_price = pos["cost"] / (pos["quantity"] * multiplier)
-        mv = pos["quantity"] * current_price * multiplier
-        pnl = pos["quantity"] * (current_price - avg_price) * multiplier
+            price = 0
+        avg = pos["cost"] / pos["shares"]
+        mv = pos["shares"] * price
+        pnl = pos["shares"] * (price - avg)
         market_value += mv
         unrealized += pnl
-        rows.append({
-            "Asset Type": asset_type,
-            "Symbol": ticker,
-            "Description": description,
-            "Quantity": pos["quantity"],
-            "Multiplier": multiplier,
-            "Avg Price": avg_price,
-            "Current Price": current_price,
-            "Market Value": mv,
-            "Unrealized P&L": pnl,
-        })
-
+        rows.append({"Ticker": ticker, "Shares": pos["shares"], "Avg Cost": avg, "Current Price": price, "Market Value": mv, "Unrealized P&L": pnl})
     account = cash + market_value
     return cash, market_value, account, realized, unrealized, pd.DataFrame(rows)
 
@@ -551,12 +509,38 @@ def compact_number(value):
             return f"{value/divisor:,.2f}{unit}"
     return f"{value:,.0f}"
 
+def render_navigation(key_prefix="nav"):
+    nav_columns = st.columns(len(section_names), gap="small")
+    for nav_col, (icon, section_name) in zip(nav_columns, section_names):
+        with nav_col:
+            if st.button(
+                f"{icon}  {section_name}",
+                key=f"{key_prefix}_{section_name}",
+                use_container_width=True,
+                type="primary" if st.session_state.active_section == section_name else "secondary",
+            ):
+                st.session_state.active_section = section_name
+                st.rerun()
+
 def render_homepage():
+    st.markdown('<div class="section-title">Major markets</div><div class="section-copy"></div>', unsafe_allow_html=True)
+    market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
+    market_cols = st.columns(6)
+    for col, (label, symbol) in zip(market_cols, market_assets):
+        with col:
+            try:
+                mq = quick_quote(symbol)
+                delta = "" if mq["change"] is None else f'{mq["change"]:+.2f}'
+                st.metric(label, money(mq["price"]), delta)
+            except Exception:
+                st.metric(label, "Unavailable")
+
     st.markdown("""
     <section class="hero">
       <div class="hero-copy">
-        <h1>STOCKFAIRVALUE</h1>
-        <p>Research • Valuation • Technicals</p>
+        <span class="eyebrow">Research • Valuation • Technicals</span>
+        <h1>STOCK FAIR VALUE TOOL</h1>
+        <p>Check stocks, Bitcoin, major indexes and oil, then move directly into earnings-based valuation and technical analysis.</p>
       </div>
       <div class="market-card">
         <div class="ticker"><div><div style="opacity:.62;font-size:.78rem">MARKET INTELLIGENCE</div><b>Quote → Valuation → Decision</b></div></div>
@@ -570,15 +554,7 @@ def render_homepage():
     </section>
     """, unsafe_allow_html=True)
 
-    launch_left, launch_mid, launch_right = st.columns([1.2, 1, 4])
-    with launch_left:
-        if st.button("Launch Dashboard  →", type="primary", use_container_width=True, key="hero_launch"):
-            st.session_state.active_section = "Price vs EPS"
-            st.rerun()
-    with launch_mid:
-        if st.button("Explore Watchlists", use_container_width=True, key="hero_watchlists"):
-            st.session_state.active_section = "Watchlists"
-            st.rerun()
+    render_navigation("home_nav")
 
     st.markdown('<div class="section-title">Instant market quote</div><div class="section-copy">Enter a stock symbol for a Yahoo Finance-style snapshot, then open the complete analysis.</div>', unsafe_allow_html=True)
     q1, q2 = st.columns([5,1])
@@ -589,75 +565,58 @@ def render_homepage():
     if get_quote and home_ticker:
         st.session_state.home_quote_ticker = home_ticker
     quote_ticker = st.session_state.get("home_quote_ticker", "")
-    if not quote_ticker:
-        st.info("Enter a ticker to load a market quote.")
-        return
-    try:
-        q = quick_quote(quote_ticker)
-        change_text = "N/A" if q["change"] is None else f'{q["change"]:+.2f}'
-        change_pct_text = "N/A" if q["change_pct"] is None else f'{q["change_pct"]:+.2f}%'
-        exchange_line = " • ".join(x for x in [q.get("exchange"), q.get("currency")] if x)
-        st.markdown(
-            f"""
-            <div style="padding:22px 24px;border:1px solid rgba(128,128,128,.24);border-radius:16px;background:rgba(128,128,128,.035);margin:8px 0 18px">
-              <div style="font-size:1.55rem;font-weight:800;letter-spacing:-.02em">{q['name']} ({q['ticker']})</div>
-              <div style="opacity:.65;font-size:.84rem;margin-top:2px">{exchange_line}</div>
-              <div style="display:flex;align-items:baseline;gap:14px;margin-top:14px;flex-wrap:wrap">
-                <span style="font-size:2.75rem;font-weight:850;letter-spacing:-.045em">{money(q['price'])}</span>
-                <span style="font-size:1.08rem;font-weight:750">{change_text} ({change_pct_text})</span>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        left_stats, right_stats = st.columns(2, gap="large")
-        with left_stats:
-            left_rows = [
-                ("Previous Close", money(q["previous_close"])),
-                ("Open", money(q["open"])),
-                ("Bid", "N/A" if q["bid"] is None else f'{money(q["bid"])} x {int(q["bid_size"] or 0)}'),
-                ("Ask", "N/A" if q["ask"] is None else f'{money(q["ask"])} x {int(q["ask_size"] or 0)}'),
-                ("Day's Range", "N/A" if q["day_low"] is None or q["day_high"] is None else f'{money(q["day_low"])} - {money(q["day_high"])}'),
-                ("52 Week Range", "N/A" if q["week52_low"] is None or q["week52_high"] is None else f'{money(q["week52_low"])} - {money(q["week52_high"])}'),
-            ]
-            for label, value in left_rows:
-                st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
-        with right_stats:
-            dividend_text = "N/A" if q["dividend_rate"] is None else f'{money(q["dividend_rate"])} ({q["dividend_yield"]:.2f}%)'
-            right_rows = [
-                ("Volume", compact_number(q["volume"])),
-                ("Avg. Volume", compact_number(q["avg_volume"])),
-                ("Market Cap", compact_number(q["market_cap"])),
-                ("Beta (5Y Monthly)", "N/A" if q["beta"] is None else f'{q["beta"]:.2f}'),
-                ("PE Ratio (TTM)", "N/A" if q["pe"] is None else f'{q["pe"]:.2f}'),
-                ("EPS (TTM)", "N/A" if q["eps"] is None else money(q["eps"])),
-                ("Earnings Date", q["earnings_date"] or "N/A"),
-                ("Forward Dividend & Yield", dividend_text),
-            ]
-            for label, value in right_rows:
-                st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
-        if st.button(f'Analyze {q["ticker"]} in Full Dashboard →', type="primary", key="home_analyze_quote"):
-            st.session_state.selected_ticker = q["ticker"]
-            st.session_state.options_ticker = q["ticker"]
-            st.session_state.active_section = "Price vs EPS"
-            st.rerun()
-    except Exception as exc:
-        st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
-
-    st.markdown('<div class="section-title">Major markets</div><div class="section-copy">Click any market to load its quote above.</div>', unsafe_allow_html=True)
-    market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
-    market_cols = st.columns(6)
-    for col, (label, symbol) in zip(market_cols, market_assets):
-        with col:
-            try:
-                mq = quick_quote(symbol)
-                delta = "" if mq["change"] is None else f'{mq["change"]:+.2f}'
-                st.metric(label, money(mq["price"]), delta)
-            except Exception:
-                st.metric(label, "Unavailable")
-            if st.button("View", key=f"market_{symbol}", use_container_width=True):
-                st.session_state.home_quote_ticker = symbol
+    if quote_ticker:
+        try:
+            q = quick_quote(quote_ticker)
+            change_text = "N/A" if q["change"] is None else f'{q["change"]:+.2f}'
+            change_pct_text = "N/A" if q["change_pct"] is None else f'{q["change_pct"]:+.2f}%'
+            exchange_line = " • ".join(x for x in [q.get("exchange"), q.get("currency")] if x)
+            st.markdown(
+                f"""
+                <div style="padding:22px 24px;border:1px solid rgba(128,128,128,.24);border-radius:16px;background:rgba(128,128,128,.035);margin:8px 0 18px">
+                  <div style="font-size:1.55rem;font-weight:800;letter-spacing:-.02em">{q['name']} ({q['ticker']})</div>
+                  <div style="opacity:.65;font-size:.84rem;margin-top:2px">{exchange_line}</div>
+                  <div style="display:flex;align-items:baseline;gap:14px;margin-top:14px;flex-wrap:wrap">
+                    <span style="font-size:2.75rem;font-weight:850;letter-spacing:-.045em">{money(q['price'])}</span>
+                    <span style="font-size:1.08rem;font-weight:750">{change_text} ({change_pct_text})</span>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            left_stats, right_stats = st.columns(2, gap="large")
+            with left_stats:
+                left_rows = [
+                    ("Previous Close", money(q["previous_close"])),
+                    ("Open", money(q["open"])),
+                    ("Bid", "N/A" if q["bid"] is None else f'{money(q["bid"])} x {int(q["bid_size"] or 0)}'),
+                    ("Ask", "N/A" if q["ask"] is None else f'{money(q["ask"])} x {int(q["ask_size"] or 0)}'),
+                    ("Day's Range", "N/A" if q["day_low"] is None or q["day_high"] is None else f'{money(q["day_low"])} - {money(q["day_high"])}'),
+                    ("52 Week Range", "N/A" if q["week52_low"] is None or q["week52_high"] is None else f'{money(q["week52_low"])} - {money(q["week52_high"])}'),
+                ]
+                for label, value in left_rows:
+                    st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
+            with right_stats:
+                dividend_text = "N/A" if q["dividend_rate"] is None else f'{money(q["dividend_rate"])} ({q["dividend_yield"]:.2f}%)'
+                right_rows = [
+                    ("Volume", compact_number(q["volume"])),
+                    ("Avg. Volume", compact_number(q["avg_volume"])),
+                    ("Market Cap", compact_number(q["market_cap"])),
+                    ("Beta (5Y Monthly)", "N/A" if q["beta"] is None else f'{q["beta"]:.2f}'),
+                    ("PE Ratio (TTM)", "N/A" if q["pe"] is None else f'{q["pe"]:.2f}'),
+                    ("EPS (TTM)", "N/A" if q["eps"] is None else money(q["eps"])),
+                    ("Earnings Date", q["earnings_date"] or "N/A"),
+                    ("Forward Dividend & Yield", dividend_text),
+                ]
+                for label, value in right_rows:
+                    st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
+            if st.button(f'Analyze {q["ticker"]} in Full Dashboard →', type="primary", key="home_analyze_quote"):
+                st.session_state.selected_ticker = q["ticker"]
+                st.session_state.options_ticker = q["ticker"]
+                st.session_state.active_section = "Price vs EPS"
                 st.rerun()
+        except Exception as exc:
+            st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
 
     st.markdown('<div class="section-title">Top 10 most actively traded</div><div class="section-copy">Ranked by reported trading volume. Click a symbol to update the instant quote.</div>', unsafe_allow_html=True)
     try:
@@ -701,19 +660,9 @@ section_names = [
     ("🧪", "Backtesting"),
     ("🔎", "Options Finder"),
 ]
-nav_columns = st.columns(len(section_names), gap="small")
-for nav_col, (icon, section_name) in zip(nav_columns, section_names):
-    with nav_col:
-        if st.button(
-            f"{icon}  {section_name}",
-            key=f"nav_{section_name}",
-            use_container_width=True,
-            type="primary" if st.session_state.active_section == section_name else "secondary",
-        ):
-            st.session_state.active_section = section_name
-            st.rerun()
-
 active_section = st.session_state.active_section
+if active_section != "Home":
+    render_navigation("nav")
 
 ticker = st.session_state.selected_ticker.upper().strip()
 history_months = 3
@@ -819,28 +768,6 @@ if active_section == "Watchlists":
         st.rerun()
 
 if active_section == "Paper Trading":
-    st.session_state.setdefault("paper_asset_type", "Stock")
-    st.session_state.setdefault("paper_quote", None)
-    st.session_state.setdefault("paper_preview", None)
-
-    cash_input_col, cash_save_col = st.columns([4, 1])
-    starting_cash_text = cash_input_col.text_input(
-        "Starting cash",
-        value=f"${starting_cash():,.2f}",
-        key="paper_starting_cash",
-        help="Example: $100,000.00",
-    )
-    if cash_save_col.button("SAVE CASH", use_container_width=True):
-        try:
-            parsed_cash = float(starting_cash_text.replace("$", "").replace(",", "").strip())
-            if parsed_cash < 0:
-                raise ValueError
-            save_starting_cash(parsed_cash)
-            st.success("Starting cash saved.")
-            st.rerun()
-        except ValueError:
-            st.error("Enter a valid non-negative dollar amount.")
-
     trades = load_trades()
     cash, mv, account, realized, unrealized, positions = portfolio_summary(trades)
     a, b, c, d, e = st.columns(5)
@@ -850,223 +777,57 @@ if active_section == "Paper Trading":
     d.metric("Unrealized P&L", f"${unrealized:,.2f}")
     e.metric("Realized P&L", f"${realized:,.2f}")
 
-    st.subheader("Paper Trade Ticket")
-
-    tab_cols = st.columns(3, gap="small")
-    for col, label in zip(tab_cols, ["Stock", "Option", "Future"]):
-        with col:
-            if st.button(
-                label.upper(),
-                key=f"paper_tab_{label}",
-                use_container_width=True,
-                type="primary" if st.session_state.paper_asset_type == label else "secondary",
-            ):
-                st.session_state.paper_asset_type = label
-                st.session_state.paper_quote = None
-                st.session_state.paper_preview = None
-                st.rerun()
-
-    asset_type = st.session_state.paper_asset_type
-    symbol_col, quote_col = st.columns([4, 1])
-    default_symbol = st.session_state.selected_ticker if asset_type == "Stock" else ""
-    symbol = symbol_col.text_input(
-        "Symbol",
-        value=default_symbol,
-        key=f"paper_symbol_{asset_type}",
-        placeholder="AAPL, option contract symbol, or ES=F",
-    ).upper().strip()
-
-    if quote_col.button("GET QUOTE", type="primary", use_container_width=True):
-        if not symbol:
-            st.error("Enter a symbol.")
-        else:
-            try:
-                quote = quick_quote(symbol)
-                quote["quoted_at"] = datetime.now().strftime("%b %d, %Y %I:%M:%S %p")
-                st.session_state.paper_quote = quote
-                st.session_state.paper_preview = None
-            except Exception as exc:
-                st.session_state.paper_quote = None
-                st.error(f"Quote unavailable: {exc}")
-
-    quote = st.session_state.paper_quote
-    if quote and quote.get("ticker") == symbol:
-        q1, q2, q3, q4, q5 = st.columns(5)
-        q1.metric("Last", f"${quote.get('price') or 0:,.2f}")
-        q2.metric("Bid", f"${quote.get('bid') or 0:,.2f}")
-        q3.metric("Ask", f"${quote.get('ask') or 0:,.2f}")
-        q4.metric(
-            "Change",
-            f"${quote.get('change') or 0:,.2f}",
-            f"{quote.get('change_pct') or 0:,.2f}%",
-        )
-        q5.metric("Volume", f"{quote.get('volume') or 0:,.0f}")
-        st.caption(f"Quote time: {quote.get('quoted_at', '')}")
-
-        side_col, order_col, qty_col, date_col = st.columns(4)
-        side = side_col.radio("Side", ["BUY", "SELL"], horizontal=True, key=f"paper_side_{asset_type}")
-        order_type = order_col.radio("Order type", ["Market", "Limit"], horizontal=True, key=f"paper_order_{asset_type}")
-        quantity_label = "Shares" if asset_type == "Stock" else "Contracts"
-        quantity = qty_col.number_input(
-            quantity_label,
-            min_value=0.01,
-            value=1.0 if asset_type != "Stock" else 100.0,
-            step=1.0,
-            key=f"paper_quantity_{asset_type}",
-        )
-        trade_date = date_col.date_input("Trade date", value=date.today(), key=f"paper_date_{asset_type}")
-
-        details_col, multiplier_col = st.columns([3, 1])
-        description = details_col.text_input(
-            "Description",
-            key=f"paper_description_{asset_type}",
-            placeholder="Optional contract description",
-        )
-        default_multiplier = 1.0 if asset_type == "Stock" else 100.0 if asset_type == "Option" else 50.0
-        multiplier = multiplier_col.number_input(
-            "Multiplier",
-            min_value=0.01,
-            value=default_multiplier,
-            step=1.0,
-            key=f"paper_multiplier_{asset_type}",
-        )
-
-        market_price = float(quote.get("ask") or quote.get("price") or 0) if side == "BUY" else float(quote.get("bid") or quote.get("price") or 0)
-        if order_type == "Limit":
-            execution_price = st.number_input(
-                "Limit price",
-                min_value=0.01,
-                value=max(market_price, 0.01),
-                step=0.01,
-                key=f"paper_limit_price_{asset_type}",
-            )
-        else:
-            execution_price = market_price
-            st.caption(f"Estimated market execution price: ${execution_price:,.2f}")
-
-        estimated_value = quantity * execution_price * multiplier
-        cash_after = cash - estimated_value if side == "BUY" else cash + estimated_value
-
-        preview_col, refresh_col = st.columns([3, 1])
-        if preview_col.button("REVIEW TRADE", type="primary", use_container_width=True):
-            if execution_price <= 0:
-                st.error("A valid execution price is required.")
-            elif side == "BUY" and estimated_value > cash:
-                st.error("Insufficient paper cash for this trade.")
-            else:
-                st.session_state.paper_preview = {
-                    "trade_date": trade_date.isoformat(),
-                    "asset_type": asset_type,
-                    "action": side,
-                    "ticker": symbol,
-                    "quantity": float(quantity),
-                    "price": float(execution_price),
-                    "multiplier": float(multiplier),
-                    "description": description,
-                    "order_type": order_type,
-                    "estimated_value": float(estimated_value),
-                    "cash_after": float(cash_after),
-                }
-        if refresh_col.button("REFRESH QUOTE", use_container_width=True):
-            try:
-                fresh_quote = quick_quote(symbol)
-                fresh_quote["quoted_at"] = datetime.now().strftime("%b %d, %Y %I:%M:%S %p")
-                st.session_state.paper_quote = fresh_quote
-                st.session_state.paper_preview = None
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Quote unavailable: {exc}")
-
-    preview = st.session_state.paper_preview
-    if preview and preview.get("ticker") == symbol and preview.get("asset_type") == asset_type:
-        st.markdown("### Trade Preview")
-        st.info(
-            f"{preview['action']} {preview['quantity']:,.0f} "
-            f"{preview['asset_type'].upper()} {preview['ticker']}\n\n"
-            f"Order: {preview['order_type']} at ${preview['price']:,.2f}\n\n"
-            f"Multiplier: {preview['multiplier']:,.2f}\n\n"
-            f"Estimated {'Cost' if preview['action'] == 'BUY' else 'Credit'}: "
-            f"${preview['estimated_value']:,.2f}\n\n"
-            f"Cash After Trade: ${preview['cash_after']:,.2f}"
-        )
-        save_col, cancel_col = st.columns([3, 1])
-        if save_col.button("SAVE PAPER TRADE", type="primary", use_container_width=True):
+    with st.expander("Paper trade entry", expanded=True):
+        p1, p2, p3, p4, p5 = st.columns(5)
+        pticker = p1.text_input("Ticker", value=st.session_state.selected_ticker, key="paper_ticker").upper()
+        action = p2.selectbox("Action", ["BUY", "SELL"])
+        shares = p3.number_input("Shares", min_value=0.01, value=100.0, step=1.0)
+        default_price = 0.0
+        try:
+            default_price = valuation(pticker)["Price"] or 0.0
+        except Exception:
+            pass
+        price = p4.number_input("Price", min_value=0.0, value=float(default_price), step=0.01)
+        trade_date = p5.date_input("Date", value=date.today())
+        if st.button("Save Paper Trade", type="primary"):
             with sqlite3.connect(DB_PATH) as con:
-                con.execute(
-                    """INSERT INTO trades
-                    (trade_date, action, ticker, shares, price, asset_type, multiplier, description, order_type)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        preview["trade_date"], preview["action"], preview["ticker"],
-                        preview["quantity"], preview["price"], preview["asset_type"],
-                        preview["multiplier"], preview["description"], preview["order_type"],
-                    ),
-                )
+                con.execute("INSERT INTO trades(trade_date,action,ticker,shares,price) VALUES(?,?,?,?,?)",
+                            (trade_date.isoformat(), action, pticker, shares, price))
                 con.commit()
-            st.session_state.paper_preview = None
             st.success("Paper trade saved.")
-            st.rerun()
-        if cancel_col.button("CANCEL", use_container_width=True):
-            st.session_state.paper_preview = None
             st.rerun()
 
     if not positions.empty:
-        st.subheader("Open Positions")
-        st.dataframe(
-            positions,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Avg Price": st.column_config.NumberColumn(format="$%.2f"),
-                "Current Price": st.column_config.NumberColumn(format="$%.2f"),
-                "Market Value": st.column_config.NumberColumn(format="$%.2f"),
-                "Unrealized P&L": st.column_config.NumberColumn(format="$%.2f"),
-            },
-        )
-
-    st.subheader("Trade History")
+        st.subheader("Open positions")
+        st.dataframe(positions, use_container_width=True, hide_index=True, column_config={
+            "Avg Cost": st.column_config.NumberColumn(format="$%.2f"), "Current Price": st.column_config.NumberColumn(format="$%.2f"),
+            "Market Value": st.column_config.NumberColumn(format="$%.2f"), "Unrealized P&L": st.column_config.NumberColumn(format="$%.2f")
+        })
+    st.subheader("Trade history")
     if trades.empty:
         st.info("No paper trades yet.")
     else:
-        display_trades = trades.rename(columns={"shares": "quantity"})
-        edited = st.data_editor(
-            display_trades,
-            use_container_width=True,
-            hide_index=True,
-            disabled=["id"],
-            num_rows="fixed",
-            key="trade_editor",
-            column_config={
-                "price": st.column_config.NumberColumn("Price", format="$%.2f"),
-                "multiplier": st.column_config.NumberColumn("Multiplier", format="%.2f"),
-            },
-        )
+        edited = st.data_editor(trades, use_container_width=True, hide_index=True, disabled=["id"], num_rows="fixed", key="trade_editor")
         col1, col2, col3 = st.columns([1, 1, 2])
         if col1.button("Save edited trades"):
             with sqlite3.connect(DB_PATH) as con:
                 con.execute("DELETE FROM trades")
                 for _, r in edited.iterrows():
-                    con.execute(
-                        """INSERT INTO trades
-                        (id, trade_date, action, ticker, shares, price, asset_type, multiplier, description, order_type)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (
-                            int(r.id), str(r.trade_date), str(r.action).upper(),
-                            str(r.ticker).upper(), float(r.quantity), float(r.price),
-                            str(r.asset_type), float(r.multiplier),
-                            str(r.description or ""), str(r.order_type or "Market"),
-                        ),
-                    )
+                    con.execute("INSERT INTO trades(id,trade_date,action,ticker,shares,price) VALUES(?,?,?,?,?,?)",
+                                (int(r.id), str(r.trade_date), str(r.action), str(r.ticker).upper(), float(r.shares), float(r.price)))
                 con.commit()
             st.success("Trades updated.")
             st.rerun()
-
         delete_id = col2.number_input("Trade ID to delete", min_value=0, step=1, value=0)
         if col3.button("Delete trade") and delete_id:
             with sqlite3.connect(DB_PATH) as con:
                 con.execute("DELETE FROM trades WHERE id=?", (int(delete_id),))
                 con.commit()
             st.rerun()
+    new_cash = st.number_input("Starting cash", min_value=0.0, value=float(starting_cash()), step=1000.0)
+    if st.button("Save starting cash"):
+        save_starting_cash(new_cash)
+        st.success("Starting cash saved.")
 
 if active_section == "Backtesting":
     st.subheader("Single-stock dividend-reinvestment backtest")
@@ -1154,10 +915,10 @@ if active_section == "Options Finder":
                         "Bid": bid, "Ask": ask, "Mid": mid_price, "Delta": delta,
                         "IV %": iv * 100 if iv else None, "Volume": int(volume),
                         "Open Interest": int(sf(r.get("openInterest")) or 0),
-                        "Ann. Ret.": ann_return, "Profit": mid_price * 100, "Break-even": breakeven,
+                        "Annualized Return %": ann_return, "Break-even": breakeven,
                         "Contract": r.get("contractSymbol"),
                     })
-            results = pd.DataFrame(rows).sort_values("Ann. Ret.", ascending=False) if rows else pd.DataFrame()
+            results = pd.DataFrame(rows).sort_values("Annualized Return %", ascending=False) if rows else pd.DataFrame()
             if results.empty:
                 st.warning("No contracts matched the current filters.")
             else:
@@ -1165,9 +926,11 @@ if active_section == "Options Finder":
                     "Strike": st.column_config.NumberColumn(format="$%.2f"), "Bid": st.column_config.NumberColumn(format="$%.2f"),
                     "Ask": st.column_config.NumberColumn(format="$%.2f"), "Mid": st.column_config.NumberColumn(format="$%.2f"),
                     "Delta": st.column_config.NumberColumn(format="%.3f"), "IV %": st.column_config.NumberColumn(format="%.2f%%"),
-                    "Ann. Ret.": st.column_config.NumberColumn("Ann. Ret.", format="%.2f%%", width="small"), "Profit": st.column_config.NumberColumn("Profit", format="$%.2f", width="small"), "Break-even": st.column_config.NumberColumn(format="$%.2f")
+                    "Annualized Return %": st.column_config.NumberColumn(format="%.2f%%"), "Break-even": st.column_config.NumberColumn(format="$%.2f")
                 })
                 st.download_button("Download CSV", results.to_csv(index=False), file_name=f"{oticker}_options.csv", mime="text/csv")
         except Exception as exc:
             st.error(f"Options search failed: {exc}")
 
+st.divider()
+st.caption("Educational use only. This application does not provide investment advice or place brokerage orders.")
