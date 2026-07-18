@@ -564,58 +564,59 @@ def render_homepage():
         get_quote = st.button("Get Quote", type="primary", use_container_width=True, key="home_get_quote")
     if get_quote and home_ticker:
         st.session_state.home_quote_ticker = home_ticker
-    quote_ticker = st.session_state.get("home_quote_ticker", "") or "^GSPC"
-    try:
-        q = quick_quote(quote_ticker)
-        change_text = "N/A" if q["change"] is None else f'{q["change"]:+.2f}'
-        change_pct_text = "N/A" if q["change_pct"] is None else f'{q["change_pct"]:+.2f}%'
-        exchange_line = " • ".join(x for x in [q.get("exchange"), q.get("currency")] if x)
-        st.markdown(
-            f"""
-            <div style="padding:22px 24px;border:1px solid rgba(128,128,128,.24);border-radius:16px;background:rgba(128,128,128,.035);margin:8px 0 18px">
-              <div style="font-size:1.55rem;font-weight:800;letter-spacing:-.02em">{q['name']} ({q['ticker']})</div>
-              <div style="opacity:.65;font-size:.84rem;margin-top:2px">{exchange_line}</div>
-              <div style="display:flex;align-items:baseline;gap:14px;margin-top:14px;flex-wrap:wrap">
-                <span style="font-size:2.75rem;font-weight:850;letter-spacing:-.045em">{money(q['price'])}</span>
-                <span style="font-size:1.08rem;font-weight:750">{change_text} ({change_pct_text})</span>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        left_stats, right_stats = st.columns(2, gap="large")
-        with left_stats:
-            left_rows = [
-                ("Previous Close", money(q["previous_close"])),
-                ("Open", money(q["open"])),
-                ("Bid", "N/A" if q["bid"] is None else f'{money(q["bid"])} x {int(q["bid_size"] or 0)}'),
-                ("Ask", "N/A" if q["ask"] is None else f'{money(q["ask"])} x {int(q["ask_size"] or 0)}'),
-                ("Day's Range", "N/A" if q["day_low"] is None or q["day_high"] is None else f'{money(q["day_low"])} - {money(q["day_high"])}'),
-                ("52 Week Range", "N/A" if q["week52_low"] is None or q["week52_high"] is None else f'{money(q["week52_low"])} - {money(q["week52_high"])}'),
-            ]
-            for label, value in left_rows:
-                st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
-        with right_stats:
-            dividend_text = "N/A" if q["dividend_rate"] is None else f'{money(q["dividend_rate"])} ({q["dividend_yield"]:.2f}%)'
-            right_rows = [
-                ("Volume", compact_number(q["volume"])),
-                ("Avg. Volume", compact_number(q["avg_volume"])),
-                ("Market Cap", compact_number(q["market_cap"])),
-                ("Beta (5Y Monthly)", "N/A" if q["beta"] is None else f'{q["beta"]:.2f}'),
-                ("PE Ratio (TTM)", "N/A" if q["pe"] is None else f'{q["pe"]:.2f}'),
-                ("EPS (TTM)", "N/A" if q["eps"] is None else money(q["eps"])),
-                ("Earnings Date", q["earnings_date"] or "N/A"),
-                ("Forward Dividend & Yield", dividend_text),
-            ]
-            for label, value in right_rows:
-                st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
-        if st.button(f'Analyze {q["ticker"]} in Full Dashboard →', type="primary", key="home_analyze_quote"):
-            st.session_state.selected_ticker = q["ticker"]
-            st.session_state.options_ticker = q["ticker"]
-            st.session_state.active_section = "Price vs EPS"
-            st.rerun()
-    except Exception as exc:
-        st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
+    quote_ticker = st.session_state.get("home_quote_ticker", "")
+    if quote_ticker:
+        try:
+            q = quick_quote(quote_ticker)
+            change_text = "N/A" if q["change"] is None else f'{q["change"]:+.2f}'
+            change_pct_text = "N/A" if q["change_pct"] is None else f'{q["change_pct"]:+.2f}%'
+            exchange_line = " • ".join(x for x in [q.get("exchange"), q.get("currency")] if x)
+            st.markdown(
+                f"""
+                <div style="padding:22px 24px;border:1px solid rgba(128,128,128,.24);border-radius:16px;background:rgba(128,128,128,.035);margin:8px 0 18px">
+                  <div style="font-size:1.55rem;font-weight:800;letter-spacing:-.02em">{q['name']} ({q['ticker']})</div>
+                  <div style="opacity:.65;font-size:.84rem;margin-top:2px">{exchange_line}</div>
+                  <div style="display:flex;align-items:baseline;gap:14px;margin-top:14px;flex-wrap:wrap">
+                    <span style="font-size:2.75rem;font-weight:850;letter-spacing:-.045em">{money(q['price'])}</span>
+                    <span style="font-size:1.08rem;font-weight:750">{change_text} ({change_pct_text})</span>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            left_stats, right_stats = st.columns(2, gap="large")
+            with left_stats:
+                left_rows = [
+                    ("Previous Close", money(q["previous_close"])),
+                    ("Open", money(q["open"])),
+                    ("Bid", "N/A" if q["bid"] is None else f'{money(q["bid"])} x {int(q["bid_size"] or 0)}'),
+                    ("Ask", "N/A" if q["ask"] is None else f'{money(q["ask"])} x {int(q["ask_size"] or 0)}'),
+                    ("Day's Range", "N/A" if q["day_low"] is None or q["day_high"] is None else f'{money(q["day_low"])} - {money(q["day_high"])}'),
+                    ("52 Week Range", "N/A" if q["week52_low"] is None or q["week52_high"] is None else f'{money(q["week52_low"])} - {money(q["week52_high"])}'),
+                ]
+                for label, value in left_rows:
+                    st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
+            with right_stats:
+                dividend_text = "N/A" if q["dividend_rate"] is None else f'{money(q["dividend_rate"])} ({q["dividend_yield"]:.2f}%)'
+                right_rows = [
+                    ("Volume", compact_number(q["volume"])),
+                    ("Avg. Volume", compact_number(q["avg_volume"])),
+                    ("Market Cap", compact_number(q["market_cap"])),
+                    ("Beta (5Y Monthly)", "N/A" if q["beta"] is None else f'{q["beta"]:.2f}'),
+                    ("PE Ratio (TTM)", "N/A" if q["pe"] is None else f'{q["pe"]:.2f}'),
+                    ("EPS (TTM)", "N/A" if q["eps"] is None else money(q["eps"])),
+                    ("Earnings Date", q["earnings_date"] or "N/A"),
+                    ("Forward Dividend & Yield", dividend_text),
+                ]
+                for label, value in right_rows:
+                    st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
+            if st.button(f'Analyze {q["ticker"]} in Full Dashboard →', type="primary", key="home_analyze_quote"):
+                st.session_state.selected_ticker = q["ticker"]
+                st.session_state.options_ticker = q["ticker"]
+                st.session_state.active_section = "Price vs EPS"
+                st.rerun()
+        except Exception as exc:
+            st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
 
     st.markdown('<div class="section-title">Top 10 most actively traded</div><div class="section-copy">Ranked by reported trading volume. Click a symbol to update the instant quote.</div>', unsafe_allow_html=True)
     try:
