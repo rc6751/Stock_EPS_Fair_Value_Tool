@@ -545,7 +545,7 @@ def chart_figure(ticker, v, history_months):
         gridcolor="rgba(128,128,128,0.18)", title_text="RSI"
     )
     fig.update_layout(
-        title=f"{symbol_company(ticker)} — Price, Bollinger Bands, Fair Values and RSI",
+        title=f"{ticker} {v.get('Company Name', ticker)} — Price, Bollinger Bands, Fair Values and RSI",
         height=1120, xaxis_rangeslider_visible=False, hovermode="x unified",
         dragmode="zoom",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
