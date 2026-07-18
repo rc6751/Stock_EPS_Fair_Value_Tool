@@ -451,7 +451,7 @@ def chart_figure(ticker, v, history_months):
     if not current_price or current_price <= 0:
         current_price = float(df["Close"].dropna().iloc[-1])
     fig.add_hline(
-        y=current_price, line_dash="dot", line_width=3, line_color="#90EE90",
+        y=current_price, line_dash="dash", line_width=3, line_color="#90EE90",
         annotation_text=f"Current Price ${current_price:,.2f}",
         annotation_position="right", row=1, col=1
     )
