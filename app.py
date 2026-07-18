@@ -945,6 +945,7 @@ if active_section == "Watchlists":
         )
     else:
         st.caption("Click any row to load that ticker directly into the chart and Options Finder.")
+    watch_df = watch_df.rename(columns={"Dividend Yield %": "Div.Yield %"})
     event = st.dataframe(
         watch_df,
         key=f"watchlist_table_{category}",
@@ -959,7 +960,7 @@ if active_section == "Watchlists":
             "P/E": st.column_config.NumberColumn(format="%.2f"),
             "Forward EPS": st.column_config.NumberColumn(format="%.2f"),
             "% of Total Portfolio": st.column_config.NumberColumn(format="%.2f%%"),
-            "Dividend Yield %": st.column_config.NumberColumn(format="%.2f%%"),
+            "Div.Yield %": st.column_config.NumberColumn(format="%.2f%%"),
             "52W Low": st.column_config.NumberColumn(format="$%.2f"),
             "52W High": st.column_config.NumberColumn(format="$%.2f"),
         }
