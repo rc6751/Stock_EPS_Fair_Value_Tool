@@ -477,10 +477,10 @@ def compact_number(value):
             return f"{value/divisor:,.2f}{unit}"
     return f"{value:,.0f}"
 
-def render_homepage():
-    st.markdown('<div class="section-title">Major markets</div><div class="section-copy">Click any market to load its quote above.</div>', unsafe_allow_html=True)
-    market_assets = [("S&P 500","^GSPC"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
-    market_cols = st.columns(5)
+def render_major_markets():
+    st.markdown('<div class="section-title">Major markets</div>', unsafe_allow_html=True)
+    market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
+    market_cols = st.columns(6)
     for col, (label, symbol) in zip(market_cols, market_assets):
         with col:
             try:
@@ -490,6 +490,8 @@ def render_homepage():
             except Exception:
                 st.metric(label, "Unavailable")
 
+
+def render_homepage():
     st.markdown("""
     <section class="hero">
       <div class="hero-copy">
@@ -512,7 +514,7 @@ def render_homepage():
     launch_left, launch_mid, launch_right = st.columns([1.2, 1, 4])
     with launch_left:
         if st.button("Launch Dashboard  →", type="primary", use_container_width=True, key="hero_launch"):
-            st.session_state.active_section = "Price vs EPS"
+            st.session_state.active_section = "Market Quote and Analysis"
             st.rerun()
     with launch_mid:
         if st.button("Explore Watchlists", use_container_width=True, key="hero_watchlists"):
@@ -575,7 +577,7 @@ def render_homepage():
         if st.button(f'Analyze {q["ticker"]} in Full Dashboard →', type="primary", key="home_analyze_quote"):
             st.session_state.selected_ticker = q["ticker"]
             st.session_state.options_ticker = q["ticker"]
-            st.session_state.active_section = "Price vs EPS"
+            st.session_state.active_section = "Market Quote and Analysis"
             st.rerun()
     except Exception as exc:
         st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
@@ -618,15 +620,17 @@ if "pending_watchlist_ticker" in st.session_state:
     if pending_ticker:
         st.session_state.selected_ticker = pending_ticker
         st.session_state.options_ticker = pending_ticker
-        st.session_state.active_section = "Price vs EPS"
+        st.session_state.active_section = "Market Quote and Analysis"
 
-st.session_state.setdefault("active_section", "Home")
+st.session_state.setdefault("active_section", "Market Quote and Analysis")
 
-st.markdown('<div class="brandbar"><div><div class="brandname">Stock EPS Fair Value Tool</div><div class="brandtag">Research • Valuation • Technicals</div></div><div class="brandtag">Market intelligence, simplified</div></div>', unsafe_allow_html=True)
+# Global market strip shown above the navigation tabs on every page.
+render_major_markets()
+
+st.markdown('<div class="brandbar"><div><div class="brandname">STOCKFAIRVALUE</div><div class="brandtag">Research • Valuation • Technicals</div></div><div class="brandtag">Market intelligence, simplified</div></div>', unsafe_allow_html=True)
 
 section_names = [
-    ("⌂", "Home"),
-    ("📈", "Price vs EPS"),
+    ("📈", "Market Quote and Analysis"),
     ("📋", "Watchlists"),
     ("💼", "Paper Trading"),
     ("🧪", "Backtesting"),
@@ -651,23 +655,27 @@ history_months = 3
 mg_text = st.session_state.manual_growth
 pe_text = st.session_state.manual_pe
 
-if active_section == "Home":
+if active_section == "Market Quote and Analysis":
     render_homepage()
-else:
+    st.markdown('<div class="section-title">Market Quote and Analysis</div><div class="section-copy">Review the current quote, earnings-based fair value, score, chart, and fundamentals in one place.</div>', unsafe_allow_html=True)
     st.caption("Yahoo Finance data is unofficial and may be delayed or rate-limited.")
-    with st.sidebar:
-        st.header("Stock analysis")
-        ticker = st.text_input("Ticker", key="selected_ticker").upper().strip()
-        history_months = st.radio("Chart history", [1, 3, 6], index=1, horizontal=True, format_func=lambda x: f"{x}M")
-        mg_text = st.text_input("Manual EPS growth %", key="manual_growth")
-        pe_text = st.text_input("Manual fair P/E", key="manual_pe")
+
+    controls = st.columns([1.5, 1, 1, 1])
+    ticker = controls[0].text_input("Ticker", key="selected_ticker").upper().strip()
+    history_months = controls[1].selectbox("Chart history", [1, 3, 6], index=1, format_func=lambda x: f"{x}M")
+    mg_text = controls[2].text_input("Manual EPS growth %", key="manual_growth")
+    pe_text = controls[3].text_input("Manual fair P/E", key="manual_pe")
+
+    action_left, action_right = st.columns([1, 5])
+    with action_left:
         st.button("Analyze", type="primary", use_container_width=True)
-        if st.button("Clear data cache", use_container_width=True):
+    with action_right:
+        if st.button("Clear data cache", use_container_width=False):
             st.cache_data.clear()
             st.success("Cached Yahoo data cleared.")
     st.divider()
 
-if active_section == "Price vs EPS":
+if active_section == "Market Quote and Analysis":
     if ticker:
         try:
             mg = float(mg_text) if mg_text.strip() else None
