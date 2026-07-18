@@ -9,9 +9,27 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
+import streamlit.components.v1 as components
 import yfinance as yf
 
 st.set_page_config(page_title="Stock_EPS_Fair_Value_Tool", page_icon="📈", layout="wide")
+
+# Keep the app at the top after an initial load or Streamlit rerun.
+components.html(
+    """<script>
+    const scrollTop = () => {
+        try {
+            window.parent.scrollTo({top: 0, left: 0, behavior: 'instant'});
+            const main = window.parent.document.querySelector('section.main');
+            if (main) main.scrollTo({top: 0, left: 0, behavior: 'instant'});
+        } catch (e) {}
+    };
+    scrollTop();
+    setTimeout(scrollTop, 50);
+    setTimeout(scrollTop, 250);
+    </script>""",
+    height=0,
+)
 
 st.markdown("""
 <style>
@@ -20,6 +38,25 @@ st.markdown("""
 div[data-testid="stHorizontalBlock"] > div {min-width: 0;}
 div.stButton > button {
     min-height: 3.15rem; font-size: 1rem; font-weight: 750; border-radius: 10px;
+}
+/* Compact metric cards across valuation and account summaries. */
+[data-testid="stMetric"] {
+    padding: .35rem .45rem;
+    min-height: 0;
+}
+[data-testid="stMetricLabel"] {
+    font-size: .68rem;
+    line-height: 1.05;
+    margin-bottom: .05rem;
+}
+[data-testid="stMetricValue"] {
+    font-size: 1.05rem;
+    line-height: 1.08;
+    white-space: nowrap;
+}
+[data-testid="stMetricDelta"] {
+    font-size: .65rem;
+    line-height: 1;
 }
 [data-testid="stSidebar"] {min-width: 285px; max-width: 285px;}
 .nav-label {font-size: .82rem; color: #777; margin-bottom: .15rem;}
@@ -619,8 +656,6 @@ if "pending_watchlist_ticker" in st.session_state:
         st.session_state.active_section = "Price vs EPS"
 
 st.session_state.setdefault("active_section", "Home")
-
-st.markdown('<div class="brandbar"><div><div class="brandname">Stock EPS Fair Value Tool</div><div class="brandtag">Research • Valuation • Technicals</div></div><div class="brandtag">Market intelligence, simplified</div></div>', unsafe_allow_html=True)
 
 section_names = [
     ("⌂", "Home"),
