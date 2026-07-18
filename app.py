@@ -230,6 +230,18 @@ def get_info(ticker: str):
 
 
 @st.cache_data(ttl=900, show_spinner=False)
+def company_name(ticker: str):
+    ticker = str(ticker or "").upper().strip()
+    if not ticker:
+        return ""
+    try:
+        info = get_info(ticker)
+        return info.get("longName") or info.get("shortName") or ticker
+    except Exception:
+        return ticker
+
+
+@st.cache_data(ttl=900, show_spinner=False)
 def get_history(ticker: str, period="2y", interval="1d"):
     df = yf.download(ticker, period=period, interval=interval, auto_adjust=False, progress=False, threads=False)
     if isinstance(df.columns, pd.MultiIndex):
@@ -309,7 +321,7 @@ def valuation(ticker: str, manual_growth=None, manual_pe=None):
     signal = "STRONG BUY" if score >= 80 else "BUY" if score >= 65 else "HOLD" if score >= 45 else "SELL"
 
     return {
-        "Ticker": ticker, "Price": current, "Original Fair Value": original,
+        "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Original Fair Value": original,
         "Relative Fair Value": relative, "Score": score, "Signal": signal,
         "P/E": pe, "Trailing EPS": trailing, "Forward EPS": forward,
         "EPS Growth %": growth, "Annual Dividend": annual_div,
@@ -326,11 +338,11 @@ def scan_group(tickers_tuple):
         try:
             v = valuation(ticker)
             rows.append({k: v[k] for k in [
-                "Ticker", "Price", "Original Fair Value", "Relative Fair Value", "Score", "Signal",
+                "Ticker", "Company Name", "Price", "Original Fair Value", "Relative Fair Value", "Score", "Signal",
                 "P/E", "Forward EPS", "Dividend Yield %", "52W Low", "52W High"
             ]})
         except Exception:
-            rows.append({"Ticker": ticker, "Signal": "DATA ERROR"})
+            rows.append({"Ticker": ticker, "Company Name": company_name(ticker), "Signal": "DATA ERROR"})
     return pd.DataFrame(rows)
 
 
@@ -484,7 +496,7 @@ def chart_figure(ticker, v, history_months):
         gridcolor="rgba(128,128,128,0.18)", title_text="RSI"
     )
     fig.update_layout(
-        title=f"{ticker} — Price, Bollinger Bands, Fair Values and RSI",
+        title=f"{v.get('Company Name', ticker)} ({ticker}) — Price, Bollinger Bands, Fair Values and RSI",
         height=1120, xaxis_rangeslider_visible=False, hovermode="x unified",
         dragmode="zoom",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
@@ -580,6 +592,7 @@ def portfolio_summary(trades):
         rows.append({
             "Asset Type": asset_type,
             "Symbol": ticker,
+            "Company Name": company_name(ticker),
             "Description": description,
             "Quantity": pos["quantity"],
             "Multiplier": multiplier,
@@ -783,7 +796,7 @@ def render_homepage():
         for rank, row in enumerate(active, 1):
             a,b,c,d,e = st.columns([.5,1.2,3,1.4,1.2])
             a.write(f"**{rank}**")
-            if b.button(row["ticker"], key=f"active_{rank}_{row['ticker']}", use_container_width=True):
+            if b.button(f"{row['ticker']} · {row['name']}", key=f"active_{rank}_{row['ticker']}", use_container_width=True):
                 st.session_state.home_quote_ticker = row["ticker"]
                 st.rerun()
             c.write(row["name"])
@@ -866,6 +879,7 @@ if active_section == "Price vs EPS":
             mpe = float(pe_text) if pe_text.strip() else None
             with st.spinner(f"Loading {ticker}..."):
                 v = valuation(ticker, mg, mpe)
+            st.markdown(f"### {v['Company Name']} ({v['Ticker']})")
             cols = st.columns(6)
             metrics = [
                 ("Price", v["Price"], "$"), ("Original FV", v["Original Fair Value"], "$"),
@@ -941,7 +955,7 @@ if active_section == "Watchlists":
         watch_df = watch_df.sort_values(by="Score", ascending=False, na_position="last").reset_index(drop=True)
 
     # Keep Score immediately after Price for every watchlist category.
-    preferred_order = ["Ticker"]
+    preferred_order = ["Ticker", "Company Name"]
     if "% of Total Portfolio" in watch_df.columns:
         preferred_order.append("% of Total Portfolio")
     preferred_order.extend([
@@ -1015,6 +1029,9 @@ if active_section == "Paper Trading":
                 key=f"paper_symbol_{asset_type}",
                 placeholder="AAPL, AAPL option symbol, or ES=F",
             ).upper().strip()
+            if pticker:
+                resolved_name = company_name(pticker)
+                st.caption(f"Company / asset name: {resolved_name}")
             action = p2.selectbox("Action", ["BUY", "SELL"], key=f"paper_action_{asset_type}")
             quantity_label = "Shares" if asset_type == "Stock" else "Contracts"
             quantity = p3.number_input(
@@ -1059,7 +1076,7 @@ if active_section == "Paper Trading":
             estimated_value = quantity * price * multiplier
             st.caption(f"Estimated trade value: ${estimated_value:,.2f}")
 
-            if st.button("Save Paper Trade", type="primary", key=f"save_paper_trade_{asset_type}"):
+            if st.button("Save Trade", type="primary", key=f"save_paper_trade_{asset_type}", use_container_width=True):
                 if not pticker:
                     st.error("Enter a symbol.")
                 elif price <= 0:
@@ -1073,7 +1090,7 @@ if active_section == "Paper Trading":
                             (trade_date.isoformat(), action, pticker, quantity, price, asset_type, multiplier, description),
                         )
                         con.commit()
-                    st.success(f"{asset_type} paper trade saved.")
+                    st.success(f"{asset_type} trade saved.")
                     st.rerun()
 
         stock_tab, option_tab, future_tab = st.tabs(["Stock", "Option", "Future"])
@@ -1098,16 +1115,65 @@ if active_section == "Paper Trading":
             },
         )
 
+        with st.expander("Close an open position", expanded=False):
+            position_labels = []
+            for idx, row in positions.reset_index(drop=True).iterrows():
+                desc = f" — {row['Description']}" if str(row.get('Description', '')).strip() else ""
+                position_labels.append(
+                    f"{idx + 1}. {row['Asset Type']} | {row['Company Name']} ({row['Symbol']}) | Qty {row['Quantity']:g}{desc}"
+                )
+            selected_position_label = st.selectbox("Position", position_labels, key="close_position_select")
+            selected_position_index = position_labels.index(selected_position_label)
+            selected_position = positions.reset_index(drop=True).iloc[selected_position_index]
+            cp1, cp2, cp3 = st.columns(3)
+            close_quantity = cp1.number_input(
+                "Quantity to close",
+                min_value=0.01,
+                max_value=float(selected_position["Quantity"]),
+                value=float(selected_position["Quantity"]),
+                step=1.0,
+                key="close_position_quantity",
+            )
+            close_price = cp2.number_input(
+                "Close price",
+                min_value=0.01,
+                value=max(float(selected_position["Current Price"]), 0.01),
+                step=0.01,
+                key="close_position_price",
+            )
+            close_date = cp3.date_input("Close date", value=date.today(), key="close_position_date")
+            if st.button("Close Position", type="primary", key="close_position_button"):
+                with sqlite3.connect(DB_PATH) as con:
+                    con.execute(
+                        """INSERT INTO trades
+                        (trade_date, action, ticker, shares, price, asset_type, multiplier, description)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            close_date.isoformat(),
+                            "SELL",
+                            str(selected_position["Symbol"]),
+                            float(close_quantity),
+                            float(close_price),
+                            str(selected_position["Asset Type"]),
+                            float(selected_position["Multiplier"]),
+                            str(selected_position.get("Description", "") or ""),
+                        ),
+                    )
+                    con.commit()
+                st.success("Position closed." if close_quantity >= float(selected_position["Quantity"]) else "Position partially closed.")
+                st.rerun()
+
     st.subheader("Trade history")
     if trades.empty:
         st.info("No paper trades yet.")
     else:
-        display_trades = trades.rename(columns={"shares": "quantity"})
+        display_trades = trades.rename(columns={"shares": "quantity"}).copy()
+        display_trades.insert(4, "company_name", display_trades["ticker"].map(company_name))
         edited = st.data_editor(
             display_trades,
             use_container_width=True,
             hide_index=True,
-            disabled=["id"],
+            disabled=["id", "company_name"],
             num_rows="fixed",
             key="trade_editor",
             column_config={
@@ -1115,8 +1181,15 @@ if active_section == "Paper Trading":
                 "multiplier": st.column_config.NumberColumn("Multiplier", format="%.2f"),
             },
         )
-        col1, col2, col3 = st.columns([1, 1, 2])
-        if col1.button("Save edited trades"):
+        trade_options = {
+            f"ID {int(r.id)} | {str(r.action).upper()} {float(r.quantity):g} {str(r.company_name)} ({str(r.ticker).upper()}) @ ${float(r.price):,.2f}": int(r.id)
+            for _, r in display_trades.iterrows()
+        }
+        selected_trade_label = st.selectbox("Selected trade", list(trade_options.keys()), key="selected_trade_action")
+        selected_trade_id = trade_options[selected_trade_label]
+
+        col1, col2, col3, col4 = st.columns(4)
+        if col1.button("Save Changes", use_container_width=True):
             with sqlite3.connect(DB_PATH) as con:
                 con.execute("DELETE FROM trades")
                 for _, r in edited.iterrows():
@@ -1140,30 +1213,48 @@ if active_section == "Paper Trading":
             st.success("Trades updated.")
             st.rerun()
 
-        delete_id = col2.number_input("Trade ID to delete", min_value=0, step=1, value=0)
-        if col3.button("Delete trade") and delete_id:
+        if col2.button("Duplicate Trade", use_container_width=True):
+            source = trades.loc[trades["id"] == selected_trade_id].iloc[0]
             with sqlite3.connect(DB_PATH) as con:
-                con.execute("DELETE FROM trades WHERE id=?", (int(delete_id),))
+                con.execute(
+                    """INSERT INTO trades
+                    (trade_date, action, ticker, shares, price, asset_type, multiplier, description)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        str(source.trade_date), str(source.action), str(source.ticker), float(source.shares),
+                        float(source.price), str(source.asset_type), float(source.multiplier),
+                        str(source.description or ""),
+                    ),
+                )
                 con.commit()
+            st.success("Trade duplicated.")
+            st.rerun()
+
+        if col3.button("Delete Trade", use_container_width=True):
+            with sqlite3.connect(DB_PATH) as con:
+                con.execute("DELETE FROM trades WHERE id=?", (selected_trade_id,))
+                con.commit()
+            st.success("Trade deleted.")
+            st.rerun()
+
+        confirm_clear = st.checkbox("Confirm clear all", key="confirm_clear_all_trades")
+        if col4.button("Clear All Trades", use_container_width=True, disabled=not confirm_clear):
+            with sqlite3.connect(DB_PATH) as con:
+                con.execute("DELETE FROM trades")
+                con.commit()
+            st.success("All trades cleared.")
             st.rerun()
 
 
 if active_section == "Backtesting":
     st.subheader("Single-stock dividend-reinvestment backtest")
-    b1, b2, b3, b4, b5 = st.columns(5)
+    b1, b2, b3, b4 = st.columns(4)
     bticker = b1.text_input("Ticker", value=st.session_state.selected_ticker, key="bt_ticker").upper()
     amount = b2.number_input("Initial investment", min_value=1.0, value=1000.0, step=100.0)
-    preset_years = b3.selectbox("Preset years", [1, 3, 5, 10], index=2)
-    custom_years = b4.number_input(
-        "Custom years",
-        min_value=0,
-        max_value=100,
-        value=0,
-        step=1,
-        help="Enter a whole number to override the preset. Leave at 0 to use the selected preset.",
-    )
-    years = int(custom_years) if custom_years > 0 else int(preset_years)
-    reinvest = b5.checkbox("Reinvest dividends", value=True)
+    years = int(b3.number_input("Years", min_value=1, max_value=100, value=5, step=1))
+    reinvest = b4.checkbox("Reinvest dividends", value=True)
+    if bticker:
+        st.caption(f"Company: {company_name(bticker)}")
     st.caption(f"Backtest period: {years} year{'s' if years != 1 else ''}")
 
     if st.button("Run Backtest"):
@@ -1208,7 +1299,7 @@ if active_section == "Backtesting":
                 f"{hist.index[-1].date():%b %d, %Y} ({elapsed_years:.2f} years)."
             )
             fig_bt = go.Figure(go.Scatter(x=hist.index, y=values, name="Portfolio Value"))
-            fig_bt.update_layout(height=500, yaxis_title="Value ($)", hovermode="x unified")
+            fig_bt.update_layout(title=f"{company_name(bticker)} ({bticker}) Backtest", height=500, yaxis_title="Value ($)", hovermode="x unified")
             st.plotly_chart(fig_bt, use_container_width=True)
         except Exception as exc:
             st.error(str(exc))
@@ -1231,6 +1322,7 @@ if active_section == "Options Finder":
 
     current_option_price = None
     if oticker:
+        st.caption(f"Company: {company_name(oticker)}")
         try:
             current_option_price = quick_quote(oticker)["price"]
         except Exception:
@@ -1272,6 +1364,7 @@ if active_section == "Options Finder":
                         continue
                     breakeven = strike - mid_price if side == "puts" else strike + mid_price
                     rows.append({
+                        "Ticker": oticker, "Company Name": company_name(oticker),
                         "Expiration": exp, "DTE": dte, "Strike": strike,
                         "Bid": bid, "Ask": ask, "Mid": mid_price, "Delta": delta,
                         "IV %": iv * 100 if iv else None, "Volume": int(volume),
