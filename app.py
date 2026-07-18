@@ -368,9 +368,9 @@ def chart_figure(ticker, v, history_months):
     fig.add_trace(go.Candlestick(
         x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"], name="Price"
     ), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=upper, name="BB Upper", line=dict(width=3)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=mid, name="BB Mid", line=dict(width=3, dash="dot")), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=lower, name="BB Lower", line=dict(width=3), fill="tonexty", fillcolor="rgba(128,128,128,0.14)"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=upper, name="BB Upper", line=dict(width=5)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=mid, name="BB Mid", line=dict(width=5, dash="dot")), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=lower, name="BB Lower", line=dict(width=5), fill="tonexty", fillcolor="rgba(128,128,128,0.14)"), row=1, col=1)
 
     # Show the latest dollar amount at the right end of each Bollinger Band line.
     last_x = df.index[-1]
@@ -382,15 +382,35 @@ def chart_figure(ticker, v, history_months):
                 x=last_x, y=latest_value, text=f"{label} ${latest_value:,.2f}",
                 showarrow=False, xanchor="left", xshift=10,
                 bgcolor="rgba(255,255,255,0.82)", borderpad=3,
-                font=dict(size=12), row=1, col=1,
+                font=dict(size=17), row=1, col=1,
             )
+
+    current_price = sf(df["Close"].iloc[-1]) if not df.empty else None
+    if current_price is not None:
+        fig.add_hline(
+            y=current_price, line_width=5, line_dash="solid",
+            annotation_text=f"CURRENT ${current_price:,.2f}",
+            annotation_position="right", row=1, col=1
+        )
+        fig.add_trace(go.Scatter(
+            x=[last_x], y=[current_price], name="Current Price",
+            mode="markers+text", text=[f"  ${current_price:,.2f}"],
+            textposition="middle right",
+            marker=dict(size=18, line=dict(width=3, color="white")),
+            textfont=dict(size=19), showlegend=False,
+            hovertemplate=f"Current Price: ${current_price:,.2f}<extra></extra>"
+        ), row=1, col=1)
 
     for label, value, dash in [
         ("Original FV", v.get("Original Fair Value"), "dash"),
         ("Relative FV", v.get("Relative Fair Value"), "dot"),
     ]:
         if value:
-            fig.add_hline(y=value, line_dash=dash, annotation_text=f"{label} ${value:,.2f}", annotation_position="right", row=1, col=1)
+            fig.add_hline(
+                y=value, line_dash=dash, line_width=3,
+                annotation_text=f"{label} ${value:,.2f}",
+                annotation_position="right", row=1, col=1
+            )
 
     # Make RSI visually distinct with momentum zones and a prominent live reading.
     fig.add_hrect(
@@ -434,7 +454,24 @@ def chart_figure(ticker, v, history_months):
         ymin = min([values.min()] + extras)
         ymax = max([values.max()] + extras)
         pad = max((ymax - ymin) * 0.08, ymax * 0.01)
-        fig.update_yaxes(range=[ymin-pad, ymax+pad], side="right", row=1, col=1)
+        axis_min, axis_max = ymin - pad, ymax + pad
+
+        # Keep the price scale clean when fair value is far from the market price.
+        # Plotly will show roughly five to seven major price levels rather than
+        # filling the large gap with many intermediate labels.
+        span = max(axis_max - axis_min, 0.01)
+        raw_step = span / 6
+        magnitude = 10 ** math.floor(math.log10(raw_step))
+        normalized = raw_step / magnitude
+        nice_factor = 1 if normalized <= 1 else 2 if normalized <= 2 else 5 if normalized <= 5 else 10
+        clean_tick_step = nice_factor * magnitude
+
+        fig.update_yaxes(
+            range=[axis_min, axis_max], side="right", row=1, col=1,
+            tickmode="linear", dtick=clean_tick_step,
+            tickprefix="$", tickformat=",.2f",
+            tickfont=dict(size=16), title_text="Price"
+        )
     fig.update_yaxes(
         range=[0, 100], side="right", row=2, col=1,
         tickmode="array", tickvals=[0, 20, 30, 40, 50, 60, 70, 80, 100],
@@ -442,10 +479,10 @@ def chart_figure(ticker, v, history_months):
     )
     fig.update_layout(
         title=f"{ticker} — Price, Bollinger Bands, Fair Values and RSI",
-        height=1020, xaxis_rangeslider_visible=False, hovermode="x unified",
+        height=1120, xaxis_rangeslider_visible=False, hovermode="x unified",
         dragmode="zoom",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        margin=dict(l=20, r=190, t=85, b=30),
+        margin=dict(l=20, r=245, t=90, b=30),
     )
     return fig
 
