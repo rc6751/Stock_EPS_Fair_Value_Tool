@@ -231,14 +231,36 @@ def get_info(ticker: str):
 
 @st.cache_data(ttl=900, show_spinner=False)
 def company_name(ticker: str):
-    ticker = str(ticker or "").upper().strip()
-    if not ticker:
+    """Return the real security/company name, or an empty string when unavailable.
+
+    Never return the ticker as the name; doing so caused displays such as "MU MU".
+    """
+    symbol = str(ticker or "").upper().strip()
+    if not symbol:
         return ""
+
+    candidates = []
     try:
-        info = get_info(ticker)
-        return info.get("longName") or info.get("shortName") or ticker
+        info = get_info(symbol)
+        candidates.extend([info.get("longName"), info.get("shortName"), info.get("displayName")])
     except Exception:
-        return ticker
+        pass
+
+    # Yahoo search is often more reliable than Ticker.info for resolving names.
+    try:
+        search = yf.Search(symbol, max_results=8, news_count=0)
+        for quote in getattr(search, "quotes", []) or []:
+            if str(quote.get("symbol", "")).upper() == symbol:
+                candidates.extend([quote.get("longname"), quote.get("shortname"), quote.get("name")])
+                break
+    except Exception:
+        pass
+
+    for candidate in candidates:
+        name = str(candidate or "").strip()
+        if name and name.upper() != symbol:
+            return name
+    return ""
 
 
 def symbol_company(ticker: str):
@@ -246,7 +268,7 @@ def symbol_company(ticker: str):
     if not symbol:
         return ""
     name = company_name(symbol)
-    return symbol if not name or name.upper() == symbol else f"{symbol} {name}"
+    return f"{symbol} {name}" if name else symbol
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -972,7 +994,7 @@ if active_section == "Watchlists":
     remaining_columns = [col for col in watch_df.columns if col not in preferred_order]
     watch_df = watch_df[[col for col in preferred_order if col in watch_df.columns] + remaining_columns]
     watch_display_df = watch_df.copy()
-    watch_display_df.insert(0, "Symbol Company", watch_display_df.apply(lambda row: f"{str(row['Ticker']).upper()} {row['Company Name']}", axis=1))
+    watch_display_df.insert(0, "Symbol Company", watch_display_df["Ticker"].map(symbol_company))
     watch_display_df = watch_display_df.drop(columns=["Ticker", "Company Name"], errors="ignore")
 
     event = st.dataframe(
@@ -1041,7 +1063,7 @@ if active_section == "Paper Trading":
             ).upper().strip()
             if pticker:
                 resolved_name = company_name(pticker)
-                st.caption(f"{pticker} {resolved_name}")
+                st.caption(symbol_company(pticker))
             action = p2.selectbox("Action", ["BUY", "SELL"], key=f"paper_action_{asset_type}")
             quantity_label = "Shares" if asset_type == "Stock" else "Contracts"
             quantity = p3.number_input(
@@ -1196,7 +1218,7 @@ if active_section == "Paper Trading":
             },
         )
         trade_options = {
-            f"ID {int(r.id)} | {str(r.action).upper()} {float(r.quantity):g} {str(r.ticker).upper()} {str(r.company_name)} @ ${float(r.price):,.2f}": int(r.id)
+            f"ID {int(r.id)} | {str(r.action).upper()} {float(r.quantity):g} {symbol_company(r.ticker)} @ ${float(r.price):,.2f}": int(r.id)
             for _, r in display_trades.iterrows()
         }
         selected_trade_label = st.selectbox("Selected trade", list(trade_options.keys()), key="selected_trade_action")
