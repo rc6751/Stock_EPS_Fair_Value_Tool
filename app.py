@@ -229,6 +229,29 @@ def get_info(ticker: str):
     return info
 
 
+
+KNOWN_SECURITY_NAMES = {
+    "MU": "Micron Technology, Inc.",
+    "AAPL": "Apple Inc.",
+    "MSFT": "Microsoft Corporation",
+    "NVDA": "NVIDIA Corporation",
+    "TSLA": "Tesla, Inc.",
+    "AMZN": "Amazon.com, Inc.",
+    "AMD": "Advanced Micro Devices, Inc.",
+    "GOOGL": "Alphabet Inc.",
+    "GOOG": "Alphabet Inc.",
+    "META": "Meta Platforms, Inc.",
+    "PLTR": "Palantir Technologies Inc.",
+    "SOFI": "SoFi Technologies, Inc.",
+    "INTC": "Intel Corporation",
+    "F": "Ford Motor Company",
+    "BAC": "Bank of America Corporation",
+    "NIO": "NIO Inc.",
+    "MARA": "MARA Holdings, Inc.",
+    "RIVN": "Rivian Automotive, Inc.",
+    "T": "AT&T Inc.",
+}
+
 @st.cache_data(ttl=900, show_spinner=False)
 def company_name(ticker: str):
     """Return the real security/company name, or an empty string when unavailable.
@@ -260,7 +283,9 @@ def company_name(ticker: str):
         name = str(candidate or "").strip()
         if name and name.upper() != symbol:
             return name
-    return ""
+
+    # Stable fallback for frequently used symbols when Yahoo omits name metadata.
+    return KNOWN_SECURITY_NAMES.get(symbol, "")
 
 
 def symbol_company(ticker: str):
@@ -657,7 +682,7 @@ def quick_quote(ticker: str):
         except Exception:
             earnings_date = None
     return {
-        "ticker": ticker, "name": info.get("shortName") or info.get("longName") or ticker,
+        "ticker": ticker, "name": company_name(ticker),
         "exchange": info.get("fullExchangeName") or info.get("exchange") or "",
         "currency": info.get("currency") or "USD",
         "price": price, "change": change, "change_pct": change_pct,
@@ -776,7 +801,7 @@ def render_homepage():
             st.markdown(
                 f"""
                 <div style="padding:22px 24px;border:1px solid rgba(128,128,128,.24);border-radius:16px;background:rgba(128,128,128,.035);margin:8px 0 18px">
-                  <div style="font-size:1.55rem;font-weight:800;letter-spacing:-.02em">{q['ticker']} {q['name']}</div>
+                  <div style="font-size:1.55rem;font-weight:800;letter-spacing:-.02em">{symbol_company(q['ticker'])}</div>
                   <div style="opacity:.65;font-size:.84rem;margin-top:2px">{exchange_line}</div>
                   <div style="display:flex;align-items:baseline;gap:14px;margin-top:14px;flex-wrap:wrap">
                     <span style="font-size:2.75rem;font-weight:850;letter-spacing:-.045em">{money(q['price'])}</span>
@@ -826,10 +851,10 @@ def render_homepage():
         for rank, row in enumerate(active, 1):
             a,b,c,d,e = st.columns([.5,1.2,3,1.4,1.2])
             a.write(f"**{rank}**")
-            if b.button(f"{row['ticker']} {row['name']}", key=f"active_{rank}_{row['ticker']}", use_container_width=True):
+            if b.button(symbol_company(row["ticker"]), key=f"active_{rank}_{row['ticker']}", use_container_width=True):
                 st.session_state.home_quote_ticker = row["ticker"]
                 st.rerun()
-            c.write(row["name"])
+            c.write(row["name"] or "Name unavailable")
             d.write(money(row["price"]))
             pct = row.get("change_pct")
             e.write("N/A" if pct is None else f"{pct:+.2f}%")
