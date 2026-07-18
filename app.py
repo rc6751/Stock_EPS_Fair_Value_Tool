@@ -933,12 +933,6 @@ if active_section == "Watchlists":
         watch_df = scan_group(tuple(tickers))
     if category == "Warren Buffett":
         watch_df["% of Total Portfolio"] = watch_df["Ticker"].map(BUFFETT_PORTFOLIO_WEIGHTS)
-        preferred_order = [
-            "Ticker", "% of Total Portfolio", "Price", "Original Fair Value",
-            "Relative Fair Value", "Score", "Signal", "P/E", "Forward EPS",
-            "Dividend Yield %", "52W Low", "52W High"
-        ]
-        watch_df = watch_df[[col for col in preferred_order if col in watch_df.columns]]
         st.caption(
             f"Portfolio percentages are based on Berkshire Hathaway's latest disclosed 13F holdings "
             f"as of {BUFFETT_13F_REPORT_DATE}. Click any row to load that ticker."
@@ -946,6 +940,23 @@ if active_section == "Watchlists":
     else:
         st.caption("Click any row to load that ticker directly into the chart and Options Finder.")
     watch_df = watch_df.rename(columns={"Dividend Yield %": "Div.Yield %"})
+
+    # Show the strongest-ranked stocks first while keeping Streamlit's
+    # interactive header sorting available to the user.
+    if "Score" in watch_df.columns:
+        watch_df = watch_df.sort_values(by="Score", ascending=False, na_position="last").reset_index(drop=True)
+
+    # Keep Score immediately after Price for every watchlist category.
+    preferred_order = ["Ticker"]
+    if "% of Total Portfolio" in watch_df.columns:
+        preferred_order.append("% of Total Portfolio")
+    preferred_order.extend([
+        "Price", "Score", "Original Fair Value", "Relative Fair Value", "Signal",
+        "P/E", "Forward EPS", "Div.Yield %", "52W Low", "52W High"
+    ])
+    remaining_columns = [col for col in watch_df.columns if col not in preferred_order]
+    watch_df = watch_df[[col for col in preferred_order if col in watch_df.columns] + remaining_columns]
+
     event = st.dataframe(
         watch_df,
         key=f"watchlist_table_{category}",
