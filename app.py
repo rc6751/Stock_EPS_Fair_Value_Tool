@@ -742,6 +742,31 @@ else:
     st.caption("Yahoo Finance data is unofficial and may be delayed or rate-limited.")
 
 if active_section == "Price vs EPS":
+    st.subheader("Price vs EPS Analysis")
+    with st.form("price_eps_symbol_form", clear_on_submit=False):
+        symbol_col, button_col = st.columns([4, 1])
+        with symbol_col:
+            entered_symbol = st.text_input(
+                "Enter Symbol to Analyze",
+                value=ticker,
+                placeholder="AAPL, MSFT, NVDA...",
+            ).upper().strip()
+        with button_col:
+            st.markdown("<div style='height:1.75rem'></div>", unsafe_allow_html=True)
+            analyze_symbol = st.form_submit_button(
+                "Analyze",
+                type="primary",
+                use_container_width=True,
+            )
+
+    if analyze_symbol:
+        if entered_symbol:
+            st.session_state.selected_ticker = entered_symbol
+            st.session_state.options_ticker = entered_symbol
+            st.rerun()
+        else:
+            st.warning("Enter a stock symbol to analyze.")
+
     if ticker:
         try:
             mg = float(mg_text) if mg_text.strip() else None
@@ -776,7 +801,7 @@ if active_section == "Price vs EPS":
         except Exception as exc:
             st.error(f"Could not analyze {ticker}: {exc}")
     else:
-        st.info("Enter a ticker in the sidebar.")
+        st.info("Enter a symbol above, then select Analyze.")
 
 if active_section == "Watchlists":
     st.session_state.setdefault("watchlist_category", list(CATEGORY_LISTS)[0])
