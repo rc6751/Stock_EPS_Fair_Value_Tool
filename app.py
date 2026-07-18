@@ -1150,16 +1150,38 @@ if active_section == "Paper Trading":
 
 if active_section == "Backtesting":
     st.subheader("Single-stock dividend-reinvestment backtest")
-    b1, b2, b3, b4 = st.columns(4)
+    b1, b2, b3, b4, b5 = st.columns(5)
     bticker = b1.text_input("Ticker", value=st.session_state.selected_ticker, key="bt_ticker").upper()
     amount = b2.number_input("Initial investment", min_value=1.0, value=1000.0, step=100.0)
-    years = b3.selectbox("Years", [1, 3, 5, 10], index=2)
-    reinvest = b4.checkbox("Reinvest dividends", value=True)
+    preset_years = b3.selectbox("Preset years", [1, 3, 5, 10], index=2)
+    custom_years = b4.number_input(
+        "Custom years",
+        min_value=0,
+        max_value=100,
+        value=0,
+        step=1,
+        help="Enter a whole number to override the preset. Leave at 0 to use the selected preset.",
+    )
+    years = int(custom_years) if custom_years > 0 else int(preset_years)
+    reinvest = b5.checkbox("Reinvest dividends", value=True)
+    st.caption(f"Backtest period: {years} year{'s' if years != 1 else ''}")
+
     if st.button("Run Backtest"):
         try:
-            hist = yf.Ticker(bticker).history(period=f"{years}y", auto_adjust=False, actions=True)
+            end_date = pd.Timestamp.today().normalize()
+            start_date = end_date - pd.DateOffset(years=years)
+            hist = yf.Ticker(bticker).history(
+                start=start_date.strftime("%Y-%m-%d"),
+                end=(end_date + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
+                auto_adjust=False,
+                actions=True,
+            )
             if hist.empty:
-                raise ValueError("No historical data returned.")
+                raise ValueError("No historical data returned for the selected period.")
+            hist = hist.dropna(subset=["Close"])
+            if hist.empty or float(hist["Close"].iloc[0]) <= 0:
+                raise ValueError("No valid closing-price data returned for the selected period.")
+
             shares_bt = amount / float(hist["Close"].iloc[0])
             cash_div = 0.0
             values = []
@@ -1172,13 +1194,19 @@ if active_section == "Backtesting":
                     else:
                         cash_div += received
                 values.append(shares_bt * row["Close"] + cash_div)
+
             ending = values[-1]
             total_return = (ending / amount - 1) * 100
-            cagr = (ending / amount) ** (1 / years) - 1
+            elapsed_years = max((hist.index[-1] - hist.index[0]).days / 365.2425, 1 / 365.2425)
+            cagr = (ending / amount) ** (1 / elapsed_years) - 1
             m1, m2, m3 = st.columns(3)
             m1.metric("Ending Value", f"${ending:,.2f}")
             m2.metric("Total Return", f"{total_return:,.2f}%")
             m3.metric("CAGR", f"{cagr*100:,.2f}%")
+            st.caption(
+                f"Data used: {hist.index[0].date():%b %d, %Y} through "
+                f"{hist.index[-1].date():%b %d, %Y} ({elapsed_years:.2f} years)."
+            )
             fig_bt = go.Figure(go.Scatter(x=hist.index, y=values, name="Portfolio Value"))
             fig_bt.update_layout(height=500, yaxis_title="Value ($)", hovermode="x unified")
             st.plotly_chart(fig_bt, use_container_width=True)
@@ -1198,9 +1226,23 @@ if active_section == "Options Finder":
     max_dte = d2.number_input("Max DTE", value=45, min_value=1, step=1)
     max_delta = d3.number_input("Maximum absolute Delta", value=0.18, min_value=0.01, max_value=1.0, step=0.01)
 
-    if st.button("Find Options", type="primary"):
+    action_col, price_col, spacer_col = st.columns([1.1, 1.25, 4.65])
+    find_options = action_col.button("Find Options", type="primary", use_container_width=True)
+
+    current_option_price = None
+    if oticker:
         try:
-            spot = valuation(oticker)["Price"]
+            current_option_price = quick_quote(oticker)["price"]
+        except Exception:
+            current_option_price = None
+    price_col.metric(
+        "Current Stock Price",
+        f"${current_option_price:,.2f}" if current_option_price is not None else "—",
+    )
+
+    if find_options:
+        try:
+            spot = current_option_price or valuation(oticker)["Price"]
             expirations = option_expirations(oticker)
             rows = []
             today = date.today()
@@ -1234,10 +1276,10 @@ if active_section == "Options Finder":
                         "Bid": bid, "Ask": ask, "Mid": mid_price, "Delta": delta,
                         "IV %": iv * 100 if iv else None, "Volume": int(volume),
                         "Open Interest": int(sf(r.get("openInterest")) or 0),
-                        "Annualized Return %": ann_return, "Break-even": breakeven,
+                        "Ann. Return %": ann_return, "Break-even": breakeven,
                         "Contract": r.get("contractSymbol"),
                     })
-            results = pd.DataFrame(rows).sort_values("Annualized Return %", ascending=False) if rows else pd.DataFrame()
+            results = pd.DataFrame(rows).sort_values("Ann. Return %", ascending=False) if rows else pd.DataFrame()
             if results.empty:
                 st.warning("No contracts matched the current filters.")
             else:
@@ -1245,7 +1287,7 @@ if active_section == "Options Finder":
                     "Strike": st.column_config.NumberColumn(format="$%.2f"), "Bid": st.column_config.NumberColumn(format="$%.2f"),
                     "Ask": st.column_config.NumberColumn(format="$%.2f"), "Mid": st.column_config.NumberColumn(format="$%.2f"),
                     "Delta": st.column_config.NumberColumn(format="%.3f"), "IV %": st.column_config.NumberColumn(format="%.2f%%"),
-                    "Annualized Return %": st.column_config.NumberColumn(format="%.2f%%"), "Break-even": st.column_config.NumberColumn(format="$%.2f")
+                    "Ann. Return %": st.column_config.NumberColumn(format="%.2f%%"), "Break-even": st.column_config.NumberColumn(format="$%.2f")
                 })
                 st.download_button("Download CSV", results.to_csv(index=False), file_name=f"{oticker}_options.csv", mime="text/csv")
         except Exception as exc:
