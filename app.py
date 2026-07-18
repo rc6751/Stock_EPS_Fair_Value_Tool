@@ -941,7 +941,21 @@ if active_section == "Price vs EPS":
                 else:
                     text = value or "N/A"
                 c.metric(label, text)
-            st.plotly_chart(
+            
+components.html("""<script>
+setInterval(()=>{
+ const doc=window.parent.document;
+ const paths=[...doc.querySelectorAll('g.shapelayer path')];
+ paths.forEach(p=>{
+   const s=p.getAttribute('style')||'';
+   if(s.includes('rgb(144, 238, 144)')||s.includes('#90EE90')||s.includes('#90ee90')){
+      p.animate([{opacity:1},{opacity:0.25},{opacity:1}],{duration:1800,iterations:1});
+   }
+ });
+},1800);
+</script>""",height=0)
+
+st.plotly_chart(
                 chart_figure(ticker, v, history_months),
                 use_container_width=True,
                 config={
