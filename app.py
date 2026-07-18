@@ -1,6 +1,5 @@
 import math
 import sqlite3
-import uuid
 from datetime import date, datetime
 from pathlib import Path
 from statistics import NormalDist
@@ -453,7 +452,6 @@ def chart_figure(ticker, v, history_months):
         current_price = float(df["Close"].dropna().iloc[-1])
     fig.add_hline(
         y=current_price, line_dash="dash", line_width=3, line_color="#90EE90",
-        opacity=1, name="blinking-current-price",
         annotation_text=f"Current Price ${current_price:,.2f}",
         annotation_position="right", row=1, col=1
     )
@@ -547,55 +545,13 @@ def chart_figure(ticker, v, history_months):
         gridcolor="rgba(128,128,128,0.18)", title_text="RSI"
     )
     fig.update_layout(
-        title=f"{ticker} {v.get('Company Name', ticker)} — Price, Bollinger Bands, Fair Values and RSI",
+        title=f"{symbol_company(ticker)} — Price, Bollinger Bands, Fair Values and RSI",
         height=1120, xaxis_rangeslider_visible=False, hovermode="x unified",
         dragmode="zoom",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
         margin=dict(l=20, r=245, t=90, b=30),
     )
     return fig
-
-
-def render_blinking_plotly_chart(fig, *, height=1140):
-    """Render the Plotly chart and blink only the named current-price shape."""
-    chart_id = f"bollinger_chart_{uuid.uuid4().hex}"
-    config = {
-        "displaylogo": False,
-        "scrollZoom": True,
-        "displayModeBar": True,
-        "modeBarButtonsToAdd": ["drawline", "eraseshape"],
-        "responsive": True,
-    }
-    chart_html = fig.to_html(
-        full_html=False,
-        include_plotlyjs=True,
-        config=config,
-        div_id=chart_id,
-    )
-    blink_script = f"""
-    <script>
-    (() => {{
-        const chart = document.getElementById('{chart_id}');
-        if (!chart) return;
-
-        let visible = true;
-        const blink = () => {{
-            const shapes = (chart.layout && chart.layout.shapes) || [];
-            const shapeIndex = shapes.findIndex(
-                shape => shape && shape.name === 'blinking-current-price'
-            );
-            if (shapeIndex < 0) return;
-
-            visible = !visible;
-            Plotly.relayout(chart, {{[`shapes[${{shapeIndex}}].opacity`]: visible ? 1 : 0}});
-        }};
-
-        const timer = window.setInterval(blink, 600);
-        window.addEventListener('beforeunload', () => window.clearInterval(timer), {{once: true}});
-    }})();
-    </script>
-    """
-    components.html(chart_html + blink_script, height=height, scrolling=False)
 
 
 def option_delta_estimate(spot, strike, dte, iv, option_type):
@@ -985,9 +941,16 @@ if active_section == "Price vs EPS":
                 else:
                     text = value or "N/A"
                 c.metric(label, text)
-            render_blinking_plotly_chart(
+            st.plotly_chart(
                 chart_figure(ticker, v, history_months),
-                height=1140,
+                use_container_width=True,
+                config={
+                    "displaylogo": False,
+                    "scrollZoom": True,
+                    "displayModeBar": True,
+                    "modeBarButtonsToAdd": ["drawline", "eraseshape"],
+                    "responsive": True,
+                },
             )
             left, right = st.columns(2)
             with left:
