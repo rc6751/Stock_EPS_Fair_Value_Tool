@@ -122,8 +122,7 @@ CATEGORY_LISTS = {
         "PLTR","SNPS","CDNS","ANET","DELL"
     ],
     "Warren Buffett": [
-        "AAPL","AXP","KO","BAC","CVX","OXY","MCO","CB","KHC","DVA",
-        "VRSN","SIRI","AMZN","DPZ","POOL","NUE","HEI","CHTR","LEN","LPX"
+        "AAPL","AXP","KO","BAC","CVX","OXY","GOOGL","CB","MCO","KHC","DVA","KR","SIRI","DAL","VRSN","COF","NYT","ALLY","GOOG","LLYVK","LEN","NUE","LLYVA","LPX","STZ","NVR","M","LEN-B","JEF"
     ],
     "Semiconductors": [
         "NVDA","AMD","AVGO","MU","INTC","QCOM","TXN","AMAT","LRCX","KLAC",
@@ -133,6 +132,39 @@ CATEGORY_LISTS = {
         "RKLB","LUNR","RDW","ASTS","PL","BKSY","SIDU","SATL","IRDM","SPIR",
         "VSAT","GSAT","MNTS","ASTR","MAXR"
     ],
+}
+
+BUFFETT_13F_REPORT_DATE = "March 31, 2026"
+BUFFETT_PORTFOLIO_WEIGHTS = {
+    "AAPL": 21.99,
+    "AXP": 17.43,
+    "KO": 11.56,
+    "BAC": 9.52,
+    "CVX": 6.64,
+    "OXY": 6.55,
+    "GOOGL": 5.93,
+    "CB": 4.24,
+    "MCO": 4.09,
+    "KHC": 2.78,
+    "DVA": 1.76,
+    "KR": 1.38,
+    "SIRI": 1.09,
+    "DAL": 1.01,
+    "VRSN": 0.85,
+    "COF": 0.50,
+    "NYT": 0.48,
+    "ALLY": 0.43,
+    "GOOG": 0.39,
+    "LLYVK": 0.38,
+    "LEN": 0.33,
+    "NUE": 0.25,
+    "LLYVA": 0.17,
+    "LPX": 0.16,
+    "STZ": 0.04,
+    "NVR": 0.03,
+    "M": 0.02,
+    "LEN-B": 0.01,
+    "JEF": 0.01
 }
 
 SECTOR_PE_DEFAULTS = {
@@ -161,8 +193,18 @@ def init_db():
             action TEXT NOT NULL,
             ticker TEXT NOT NULL,
             shares REAL NOT NULL,
-            price REAL NOT NULL
+            price REAL NOT NULL,
+            asset_type TEXT NOT NULL DEFAULT 'Stock',
+            multiplier REAL NOT NULL DEFAULT 1,
+            description TEXT NOT NULL DEFAULT ''
         )""")
+        existing_columns = {row[1] for row in con.execute("PRAGMA table_info(trades)").fetchall()}
+        if "asset_type" not in existing_columns:
+            con.execute("ALTER TABLE trades ADD COLUMN asset_type TEXT NOT NULL DEFAULT 'Stock'")
+        if "multiplier" not in existing_columns:
+            con.execute("ALTER TABLE trades ADD COLUMN multiplier REAL NOT NULL DEFAULT 1")
+        if "description" not in existing_columns:
+            con.execute("ALTER TABLE trades ADD COLUMN description TEXT NOT NULL DEFAULT ''")
         con.execute("INSERT OR IGNORE INTO settings(key,value) VALUES('starting_cash','100000')")
         con.commit()
 
@@ -291,7 +333,7 @@ def scan_group(tickers_tuple):
             v = valuation(ticker)
             rows.append({k: v[k] for k in [
                 "Ticker", "Price", "Original Fair Value", "Relative Fair Value", "Score", "Signal",
-                "P/E", "Forward EPS", "Annual Dividend", "Dividend Yield %", "52W Low", "52W High"
+                "P/E", "Forward EPS", "Dividend Yield %", "52W Low", "52W High"
             ]})
         except Exception:
             rows.append({"Ticker": ticker, "Signal": "DATA ERROR"})
@@ -400,36 +442,60 @@ def portfolio_summary(trades):
     cash = starting_cash()
     realized = 0.0
     positions = {}
+
     for _, r in trades.sort_values("id").iterrows():
-        ticker = str(r.ticker).upper()
-        shares, price = float(r.shares), float(r.price)
-        if r.action == "BUY":
-            cash -= shares * price
-            pos = positions.setdefault(ticker, {"shares": 0.0, "cost": 0.0})
-            pos["shares"] += shares
-            pos["cost"] += shares * price
+        ticker = str(r.get("ticker", "")).upper().strip()
+        asset_type = str(r.get("asset_type", "Stock") or "Stock")
+        description = str(r.get("description", "") or "")
+        quantity = float(r.get("shares", 0) or 0)
+        price = float(r.get("price", 0) or 0)
+        multiplier = float(r.get("multiplier", 1) or 1)
+        key = (asset_type, ticker, multiplier, description)
+        pos = positions.setdefault(key, {"quantity": 0.0, "cost": 0.0, "last_price": price})
+
+        if str(r.get("action", "")).upper() == "BUY":
+            cash -= quantity * price * multiplier
+            pos["quantity"] += quantity
+            pos["cost"] += quantity * price * multiplier
         else:
-            pos = positions.setdefault(ticker, {"shares": 0.0, "cost": 0.0})
-            avg = pos["cost"] / pos["shares"] if pos["shares"] else 0
-            sold = min(shares, pos["shares"])
-            realized += sold * (price - avg)
-            pos["shares"] -= sold
-            pos["cost"] -= sold * avg
-            cash += shares * price
+            avg_contract_cost = pos["cost"] / pos["quantity"] if pos["quantity"] else 0
+            sold = min(quantity, pos["quantity"])
+            realized += sold * ((price * multiplier) - avg_contract_cost)
+            pos["quantity"] -= sold
+            pos["cost"] -= sold * avg_contract_cost
+            cash += sold * price * multiplier
+        pos["last_price"] = price
+
     rows, market_value, unrealized = [], 0.0, 0.0
-    for ticker, pos in positions.items():
-        if pos["shares"] <= 1e-9:
+    for (asset_type, ticker, multiplier, description), pos in positions.items():
+        if pos["quantity"] <= 1e-9:
             continue
+
+        current_price = pos["last_price"]
         try:
-            price = valuation(ticker)["Price"] or 0
+            quoted_price = quick_quote(ticker)["price"]
+            if quoted_price is not None:
+                current_price = float(quoted_price)
         except Exception:
-            price = 0
-        avg = pos["cost"] / pos["shares"]
-        mv = pos["shares"] * price
-        pnl = pos["shares"] * (price - avg)
+            pass
+
+        avg_price = pos["cost"] / (pos["quantity"] * multiplier)
+        mv = pos["quantity"] * current_price * multiplier
+        pnl = pos["quantity"] * (current_price - avg_price) * multiplier
         market_value += mv
         unrealized += pnl
-        rows.append({"Ticker": ticker, "Shares": pos["shares"], "Avg Cost": avg, "Current Price": price, "Market Value": mv, "Unrealized P&L": pnl})
+        rows.append({
+            "Asset Type": asset_type,
+            "Symbol": ticker,
+            "Description": description,
+            "Quantity": pos["quantity"],
+            "Multiplier": multiplier,
+            "Avg Price": avg_price,
+            "Current Price": current_price,
+            "Market Value": mv,
+            "Unrealized P&L": pnl,
+        })
+
     account = cash + market_value
     return cash, market_value, account, realized, unrealized, pd.DataFrame(rows)
 
@@ -731,7 +797,20 @@ if active_section == "Watchlists":
     tickers = CATEGORY_LISTS[category]
     with st.spinner(f"Loading {category}..."):
         watch_df = scan_group(tuple(tickers))
-    st.caption("Click any row to load that ticker directly into the chart and Options Finder.")
+    if category == "Warren Buffett":
+        watch_df["% of Total Portfolio"] = watch_df["Ticker"].map(BUFFETT_PORTFOLIO_WEIGHTS)
+        preferred_order = [
+            "Ticker", "% of Total Portfolio", "Price", "Original Fair Value",
+            "Relative Fair Value", "Score", "Signal", "P/E", "Forward EPS",
+            "Dividend Yield %", "52W Low", "52W High"
+        ]
+        watch_df = watch_df[[col for col in preferred_order if col in watch_df.columns]]
+        st.caption(
+            f"Portfolio percentages are based on Berkshire Hathaway's latest disclosed 13F holdings "
+            f"as of {BUFFETT_13F_REPORT_DATE}. Click any row to load that ticker."
+        )
+    else:
+        st.caption("Click any row to load that ticker directly into the chart and Options Finder.")
     event = st.dataframe(
         watch_df,
         key=f"watchlist_table_{category}",
@@ -745,7 +824,7 @@ if active_section == "Watchlists":
             "Relative Fair Value": st.column_config.NumberColumn(format="$%.2f"),
             "P/E": st.column_config.NumberColumn(format="%.2f"),
             "Forward EPS": st.column_config.NumberColumn(format="%.2f"),
-            "Annual Dividend": st.column_config.NumberColumn(format="$%.2f"),
+            "% of Total Portfolio": st.column_config.NumberColumn(format="%.2f%%"),
             "Dividend Yield %": st.column_config.NumberColumn(format="%.2f%%"),
             "52W Low": st.column_config.NumberColumn(format="$%.2f"),
             "52W High": st.column_config.NumberColumn(format="$%.2f"),
@@ -758,10 +837,24 @@ if active_section == "Watchlists":
         st.rerun()
 
 if active_section == "Paper Trading":
-    new_cash = st.number_input("Starting cash", min_value=0.0, value=float(starting_cash()), step=1000.0)
-    if st.button("Save starting cash"):
-        save_starting_cash(new_cash)
-        st.success("Starting cash saved.")
+    cash_col, save_col = st.columns([4, 1])
+    starting_cash_text = cash_col.text_input(
+        "Starting cash",
+        value=f"${starting_cash():,.2f}",
+        key="starting_cash_text",
+        help="Enter a dollar amount, for example $100,000.00",
+    )
+    if save_col.button("Save starting cash", use_container_width=True):
+        try:
+            parsed_cash = float(starting_cash_text.replace("$", "").replace(",", "").strip())
+            if parsed_cash < 0:
+                raise ValueError
+            save_starting_cash(parsed_cash)
+            st.session_state.starting_cash_text = f"${parsed_cash:,.2f}"
+            st.success("Starting cash saved.")
+            st.rerun()
+        except ValueError:
+            st.error("Enter a valid non-negative dollar amount.")
 
     trades = load_trades()
     cash, mv, account, realized, unrealized, positions = portfolio_summary(trades)
@@ -773,52 +866,128 @@ if active_section == "Paper Trading":
     e.metric("Realized P&L", f"${realized:,.2f}")
 
     with st.expander("Paper trade entry", expanded=True):
+        asset_type = st.selectbox("Asset type", ["Stock", "Option", "Future"], key="paper_asset_type")
+
         p1, p2, p3, p4, p5 = st.columns(5)
-        pticker = p1.text_input("Ticker", value=st.session_state.selected_ticker, key="paper_ticker").upper()
-        action = p2.selectbox("Action", ["BUY", "SELL"])
-        shares = p3.number_input("Shares", min_value=0.01, value=100.0, step=1.0)
+        default_symbol = st.session_state.selected_ticker if asset_type == "Stock" else ""
+        pticker = p1.text_input(
+            "Symbol",
+            value=default_symbol,
+            key=f"paper_symbol_{asset_type}",
+            placeholder="AAPL, AAPL option symbol, or ES=F",
+        ).upper().strip()
+        action = p2.selectbox("Action", ["BUY", "SELL"], key="paper_action")
+        quantity_label = "Shares" if asset_type == "Stock" else "Contracts"
+        quantity = p3.number_input(quantity_label, min_value=0.01, value=1.0, step=1.0, key=f"paper_qty_{asset_type}")
+
         default_price = 0.0
-        try:
-            default_price = valuation(pticker)["Price"] or 0.0
-        except Exception:
-            pass
-        price = p4.number_input("Price", min_value=0.0, value=float(default_price), step=0.01)
-        trade_date = p5.date_input("Date", value=date.today())
+        if pticker:
+            try:
+                default_price = float(quick_quote(pticker)["price"] or 0.0)
+            except Exception:
+                pass
+        price = p4.number_input("Trade price", min_value=0.0, value=default_price, step=0.01, key=f"paper_price_{asset_type}")
+        trade_date = p5.date_input("Date", value=date.today(), key=f"paper_date_{asset_type}")
+
+        d1, d2 = st.columns([1, 3])
+        default_multiplier = 1.0 if asset_type == "Stock" else 100.0 if asset_type == "Option" else 50.0
+        multiplier = d1.number_input(
+            "Contract multiplier",
+            min_value=0.01,
+            value=default_multiplier,
+            step=1.0,
+            key=f"paper_multiplier_{asset_type}",
+            help="Stocks normally use 1, equity options normally use 100, and futures vary by contract.",
+        )
+        description = d2.text_input(
+            "Description",
+            key=f"paper_description_{asset_type}",
+            placeholder="Optional: AAPL 190 Call 2026-09-18 or E-mini S&P 500",
+        )
+
+        estimated_value = quantity * price * multiplier
+        st.caption(f"Estimated trade value: ${estimated_value:,.2f}")
+
         if st.button("Save Paper Trade", type="primary"):
-            with sqlite3.connect(DB_PATH) as con:
-                con.execute("INSERT INTO trades(trade_date,action,ticker,shares,price) VALUES(?,?,?,?,?)",
-                            (trade_date.isoformat(), action, pticker, shares, price))
-                con.commit()
-            st.success("Paper trade saved.")
-            st.rerun()
+            if not pticker:
+                st.error("Enter a symbol.")
+            elif price <= 0:
+                st.error("Enter a trade price greater than zero.")
+            else:
+                with sqlite3.connect(DB_PATH) as con:
+                    con.execute(
+                        """INSERT INTO trades
+                        (trade_date, action, ticker, shares, price, asset_type, multiplier, description)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (trade_date.isoformat(), action, pticker, quantity, price, asset_type, multiplier, description),
+                    )
+                    con.commit()
+                st.success(f"{asset_type} paper trade saved.")
+                st.rerun()
 
     if not positions.empty:
         st.subheader("Open positions")
-        st.dataframe(positions, use_container_width=True, hide_index=True, column_config={
-            "Avg Cost": st.column_config.NumberColumn(format="$%.2f"), "Current Price": st.column_config.NumberColumn(format="$%.2f"),
-            "Market Value": st.column_config.NumberColumn(format="$%.2f"), "Unrealized P&L": st.column_config.NumberColumn(format="$%.2f")
-        })
+        st.dataframe(
+            positions,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Avg Price": st.column_config.NumberColumn(format="$%.2f"),
+                "Current Price": st.column_config.NumberColumn(format="$%.2f"),
+                "Market Value": st.column_config.NumberColumn(format="$%.2f"),
+                "Unrealized P&L": st.column_config.NumberColumn(format="$%.2f"),
+            },
+        )
+
     st.subheader("Trade history")
     if trades.empty:
         st.info("No paper trades yet.")
     else:
-        edited = st.data_editor(trades, use_container_width=True, hide_index=True, disabled=["id"], num_rows="fixed", key="trade_editor")
+        display_trades = trades.rename(columns={"shares": "quantity"})
+        edited = st.data_editor(
+            display_trades,
+            use_container_width=True,
+            hide_index=True,
+            disabled=["id"],
+            num_rows="fixed",
+            key="trade_editor",
+            column_config={
+                "price": st.column_config.NumberColumn("Price", format="$%.2f"),
+                "multiplier": st.column_config.NumberColumn("Multiplier", format="%.2f"),
+            },
+        )
         col1, col2, col3 = st.columns([1, 1, 2])
         if col1.button("Save edited trades"):
             with sqlite3.connect(DB_PATH) as con:
                 con.execute("DELETE FROM trades")
                 for _, r in edited.iterrows():
-                    con.execute("INSERT INTO trades(id,trade_date,action,ticker,shares,price) VALUES(?,?,?,?,?,?)",
-                                (int(r.id), str(r.trade_date), str(r.action), str(r.ticker).upper(), float(r.shares), float(r.price)))
+                    con.execute(
+                        """INSERT INTO trades
+                        (id, trade_date, action, ticker, shares, price, asset_type, multiplier, description)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            int(r.id),
+                            str(r.trade_date),
+                            str(r.action).upper(),
+                            str(r.ticker).upper(),
+                            float(r.quantity),
+                            float(r.price),
+                            str(r.asset_type),
+                            float(r.multiplier),
+                            str(r.description or ""),
+                        ),
+                    )
                 con.commit()
             st.success("Trades updated.")
             st.rerun()
+
         delete_id = col2.number_input("Trade ID to delete", min_value=0, step=1, value=0)
         if col3.button("Delete trade") and delete_id:
             with sqlite3.connect(DB_PATH) as con:
                 con.execute("DELETE FROM trades WHERE id=?", (int(delete_id),))
                 con.commit()
             st.rerun()
+
 
 if active_section == "Backtesting":
     st.subheader("Single-stock dividend-reinvestment backtest")
