@@ -12,21 +12,26 @@ import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
 
-st.set_page_config(page_title="Stock_EPS_Fair_Value_Tool", page_icon="📈", layout="wide")
+st.set_page_config(page_title="STOCKFAIRVALUE", page_icon="📈", layout="wide")
 
-# Keep the app at the top after an initial load or Streamlit rerun.
+# Keep the app at the top on a fresh page load.
 components.html(
     """<script>
-    const scrollTop = () => {
-        try {
-            window.parent.scrollTo({top: 0, left: 0, behavior: 'instant'});
-            const main = window.parent.document.querySelector('section.main');
-            if (main) main.scrollTo({top: 0, left: 0, behavior: 'instant'});
-        } catch (e) {}
-    };
-    scrollTop();
-    setTimeout(scrollTop, 50);
-    setTimeout(scrollTop, 250);
+    try {
+        const parentDoc = window.parent.document;
+        const scrollTop = () => {
+            window.parent.scrollTo(0, 0);
+            const main = parentDoc.querySelector('section.main');
+            if (main) main.scrollTop = 0;
+            const active = parentDoc.activeElement;
+            if (active && typeof active.blur === 'function') active.blur();
+        };
+        if (!window.parent.__stockfairvalue_top_reset__) {
+            window.parent.__stockfairvalue_top_reset__ = true;
+            requestAnimationFrame(scrollTop);
+            setTimeout(scrollTop, 75);
+        }
+    } catch (e) {}
     </script>""",
     height=0,
 )
@@ -41,16 +46,16 @@ div.stButton > button {
 }
 /* Compact metric cards across valuation and account summaries. */
 [data-testid="stMetric"] {
-    padding: .35rem .45rem;
+    padding: .18rem .28rem;
     min-height: 0;
 }
 [data-testid="stMetricLabel"] {
-    font-size: .68rem;
+    font-size: .60rem;
     line-height: 1.05;
     margin-bottom: .05rem;
 }
 [data-testid="stMetricValue"] {
-    font-size: 1.05rem;
+    font-size: .88rem;
     line-height: 1.08;
     white-space: nowrap;
 }
@@ -513,9 +518,8 @@ def render_homepage():
     st.markdown("""
     <section class="hero">
       <div class="hero-copy">
-        <span class="eyebrow">Live markets + smarter valuation</span>
-        <h1>Markets at a glance. Fair value in one click.</h1>
-        <p>Check stocks, Bitcoin, major indexes and oil, then move directly into earnings-based valuation and technical analysis.</p>
+        <h1>STOCKFAIRVALUE</h1>
+        <p>Research • Valuation • Technicals</p>
       </div>
       <div class="market-card">
         <div class="ticker"><div><div style="opacity:.62;font-size:.78rem">MARKET INTELLIGENCE</div><b>Quote → Valuation → Decision</b></div></div>
@@ -542,12 +546,15 @@ def render_homepage():
     st.markdown('<div class="section-title">Instant market quote</div><div class="section-copy">Enter a stock symbol for a Yahoo Finance-style snapshot, then open the complete analysis.</div>', unsafe_allow_html=True)
     q1, q2 = st.columns([5,1])
     with q1:
-        home_ticker = st.text_input("Stock symbol", value=st.session_state.get("home_quote_ticker", "AAPL"), label_visibility="collapsed", placeholder="Enter ticker — AAPL, MSFT, KO...").upper().strip()
+        home_ticker = st.text_input("Stock symbol", value=st.session_state.get("home_quote_ticker", ""), label_visibility="collapsed", placeholder="Enter ticker — AAPL, MSFT, KO...").upper().strip()
     with q2:
         get_quote = st.button("Get Quote", type="primary", use_container_width=True, key="home_get_quote")
     if get_quote and home_ticker:
         st.session_state.home_quote_ticker = home_ticker
-    quote_ticker = st.session_state.get("home_quote_ticker", "AAPL")
+    quote_ticker = st.session_state.get("home_quote_ticker", "")
+    if not quote_ticker:
+        st.info("Enter a ticker to load a market quote.")
+        return
     try:
         q = quick_quote(quote_ticker)
         change_text = "N/A" if q["change"] is None else f'{q["change"]:+.2f}'
@@ -601,8 +608,8 @@ def render_homepage():
         st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
 
     st.markdown('<div class="section-title">Major markets</div><div class="section-copy">Click any market to load its quote above.</div>', unsafe_allow_html=True)
-    market_assets = [("S&P 500","^GSPC"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
-    market_cols = st.columns(5)
+    market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
+    market_cols = st.columns(6)
     for col, (label, symbol) in zip(market_cols, market_assets):
         with col:
             try:
@@ -631,18 +638,10 @@ def render_homepage():
     except Exception as exc:
         st.info(f"Most-active data is temporarily unavailable: {exc}")
 
-    st.markdown("""
-    <div class="feature-grid">
-      <div class="feature-card"><div class="feature-icon">📈</div><h3>Price vs. EPS</h3><p>Compare market price with earnings-driven fair value on an interactive chart.</p></div>
-      <div class="feature-card"><div class="feature-icon">👑</div><h3>Curated Watchlists</h3><p>Load Dividend Kings and other focused lists into the chart with one click.</p></div>
-      <div class="feature-card"><div class="feature-icon">🎯</div><h3>Options Finder</h3><p>Filter contracts by return, expiration, estimated delta and volume.</p></div>
-    </div>
-    <div class="site-footer"><b>Stock EPS Fair Value Tool</b><br>For educational and informational purposes only. Quotes may be delayed, incomplete or inaccurate. Nothing presented is investment advice or a recommendation to buy or sell any security.</div>
-    """, unsafe_allow_html=True)
 
 init_db()
 for key, value in {
-    "selected_ticker": "AAPL", "options_ticker": "AAPL", "manual_growth": "", "manual_pe": ""
+    "selected_ticker": "", "options_ticker": "", "manual_growth": "", "manual_pe": ""
 }.items():
     st.session_state.setdefault(key, value)
 
@@ -839,7 +838,7 @@ if active_section == "Paper Trading":
                 con.execute("DELETE FROM trades WHERE id=?", (int(delete_id),))
                 con.commit()
             st.rerun()
-    new_cash = st.number_input("Starting cash", min_value=0.0, value=float(starting_cash()), step=1000.0)
+    new_cash = st.number_input("Starting cash", min_value=0.0, max_value=5_000_000.0, value=min(float(starting_cash()), 5_000_000.0), step=1000.0)
     if st.button("Save starting cash"):
         save_starting_cash(new_cash)
         st.success("Starting cash saved.")
@@ -930,10 +929,10 @@ if active_section == "Options Finder":
                         "Bid": bid, "Ask": ask, "Mid": mid_price, "Delta": delta,
                         "IV %": iv * 100 if iv else None, "Volume": int(volume),
                         "Open Interest": int(sf(r.get("openInterest")) or 0),
-                        "Annualized Return %": ann_return, "Break-even": breakeven,
+                        "Ann. Ret.": ann_return, "Profit": mid_price * 100, "Break-even": breakeven,
                         "Contract": r.get("contractSymbol"),
                     })
-            results = pd.DataFrame(rows).sort_values("Annualized Return %", ascending=False) if rows else pd.DataFrame()
+            results = pd.DataFrame(rows).sort_values("Ann. Ret.", ascending=False) if rows else pd.DataFrame()
             if results.empty:
                 st.warning("No contracts matched the current filters.")
             else:
@@ -941,11 +940,9 @@ if active_section == "Options Finder":
                     "Strike": st.column_config.NumberColumn(format="$%.2f"), "Bid": st.column_config.NumberColumn(format="$%.2f"),
                     "Ask": st.column_config.NumberColumn(format="$%.2f"), "Mid": st.column_config.NumberColumn(format="$%.2f"),
                     "Delta": st.column_config.NumberColumn(format="%.3f"), "IV %": st.column_config.NumberColumn(format="%.2f%%"),
-                    "Annualized Return %": st.column_config.NumberColumn(format="%.2f%%"), "Break-even": st.column_config.NumberColumn(format="$%.2f")
+                    "Ann. Ret.": st.column_config.NumberColumn("Ann. Ret.", format="%.2f%%", width="small"), "Profit": st.column_config.NumberColumn("Profit", format="$%.2f", width="small"), "Break-even": st.column_config.NumberColumn(format="$%.2f")
                 })
                 st.download_button("Download CSV", results.to_csv(index=False), file_name=f"{oticker}_options.csv", mime="text/csv")
         except Exception as exc:
             st.error(f"Options search failed: {exc}")
 
-st.divider()
-st.caption("Educational use only. This application does not provide investment advice or place brokerage orders.")
