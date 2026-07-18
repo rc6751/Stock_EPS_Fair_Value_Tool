@@ -12,7 +12,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
 
-st.set_page_config(page_title="STOCKFAIRVALUE", page_icon="📈", layout="wide")
+st.set_page_config(page_title="STOCK FAIR VALUE TOOL", page_icon="📈", layout="wide")
 
 # Keep the app at the top on a fresh page load.
 components.html(
@@ -79,11 +79,11 @@ div.stButton > button {
 .eyebrow {display:inline-block;padding:7px 12px;border:1px solid rgba(255,255,255,.22);border-radius:999px;background:rgba(255,255,255,.08);font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;}
 .hero h1 {font-size:4rem;line-height:1.02;letter-spacing:-.055em;margin:22px 0 18px;max-width:740px;}
 .hero p {font-size:1.15rem;line-height:1.65;color:rgba(255,255,255,.78);max-width:600px;}
-.market-card {position:absolute;z-index:3;right:24px;top:24px;width:255px;padding:15px;border:1px solid rgba(255,255,255,.16);border-radius:20px;background:rgba(7,18,38,.68);backdrop-filter:blur(15px);box-shadow:0 24px 70px rgba(0,0,0,.3);}
+.market-card {position:absolute;z-index:3;right:24px;top:24px;width:360px;padding:24px;border:1px solid rgba(255,255,255,.16);border-radius:20px;background:rgba(7,18,38,.68);backdrop-filter:blur(15px);box-shadow:0 24px 70px rgba(0,0,0,.3);}
 .market-card .ticker {display:flex;justify-content:space-between;align-items:end;margin-bottom:12px;}
-.market-card .price {font-size:1.45rem;font-weight:850;}
+.market-card .price {font-size:1.9rem;font-weight:850;}
 .market-card .gain {color:#5ee8a5;font-weight:750;}
-.spark {width:100%;height:105px;}
+.spark {width:100%;height:150px;}
 .statrow {display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:8px;}
 .stat {padding:7px;border-radius:10px;background:rgba(255,255,255,.06);font-size:.72rem;color:rgba(255,255,255,.6);}
 .stat b {display:block;color:white;font-size:.9rem;margin-top:3px;}
@@ -518,7 +518,7 @@ def render_homepage():
     st.markdown("""
     <section class="hero">
       <div class="hero-copy">
-        <h1>STOCKFAIRVALUE</h1>
+        <h1>STOCK FAIR VALUE TOOL</h1>
         <p>Research • Valuation • Technicals</p>
       </div>
       <div class="market-card">
@@ -532,12 +532,6 @@ def render_homepage():
       </div>
     </section>
     """, unsafe_allow_html=True)
-
-    launch_left, launch_mid, launch_right = st.columns([1.2, 1, 4])
-    with launch_left:
-        if st.button("Launch Dashboard  →", type="primary", use_container_width=True, key="hero_launch"):
-            st.session_state.active_section = "Price vs EPS"
-            st.rerun()
     with launch_mid:
         if st.button("Explore Watchlists", use_container_width=True, key="hero_watchlists"):
             st.session_state.active_section = "Watchlists"
@@ -664,8 +658,8 @@ section_names = [
     ("🧪", "Backtesting"),
     ("🔎", "Options Finder"),
 ]
-nav_columns = st.columns(len(section_names), gap="small")
-for nav_col, (icon, section_name) in zip(nav_columns, section_names):
+nav_columns = st.columns(len(section_names), gap="small") if st.session_state.active_section!="Home" else []
+for nav_col, (icon, section_name) in zip(nav_columns if nav_columns else [], section_names):
     with nav_col:
         if st.button(
             f"{icon}  {section_name}",
@@ -685,6 +679,12 @@ pe_text = st.session_state.manual_pe
 
 if active_section == "Home":
     render_homepage()
+    nav_columns = st.columns(len(section_names), gap="small") if st.session_state.active_section!="Home" else []
+    for nav_col,(icon,section_name) in zip(nav_columns,section_names):
+        with nav_col:
+            if st.button(f"{icon}  {section_name}", key=f"home_nav_{section_name}", use_container_width=True, type="primary" if st.session_state.active_section==section_name else "secondary"):
+                st.session_state.active_section=section_name
+                st.rerun()
 else:
     st.caption("Yahoo Finance data is unofficial and may be delayed or rate-limited.")
     with st.sidebar:
