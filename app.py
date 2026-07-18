@@ -360,13 +360,30 @@ def chart_figure(ticker, v, history_months):
     df = full.loc[full.index >= cutoff]
     mid, upper, lower, rsi = mid.loc[df.index], upper.loc[df.index], lower.loc[df.index], rsi.loc[df.index]
 
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.76, 0.24], vertical_spacing=0.04)
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True,
+        row_heights=[0.68, 0.32], vertical_spacing=0.05,
+        subplot_titles=("Price & Bollinger Bands", "RSI Momentum (14)")
+    )
     fig.add_trace(go.Candlestick(
         x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"], name="Price"
     ), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=upper, name="BB Upper", line=dict(width=1)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=mid, name="BB Mid", line=dict(width=1, dash="dot")), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=lower, name="BB Lower", line=dict(width=1), fill="tonexty", fillcolor="rgba(128,128,128,0.10)"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=upper, name="BB Upper", line=dict(width=3)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=mid, name="BB Mid", line=dict(width=3, dash="dot")), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=lower, name="BB Lower", line=dict(width=3), fill="tonexty", fillcolor="rgba(128,128,128,0.14)"), row=1, col=1)
+
+    # Show the latest dollar amount at the right end of each Bollinger Band line.
+    last_x = df.index[-1]
+    for series, label in [(upper, "Upper"), (mid, "Mid"), (lower, "Lower")]:
+        clean = series.dropna()
+        if not clean.empty:
+            latest_value = float(clean.iloc[-1])
+            fig.add_annotation(
+                x=last_x, y=latest_value, text=f"{label} ${latest_value:,.2f}",
+                showarrow=False, xanchor="left", xshift=10,
+                bgcolor="rgba(255,255,255,0.82)", borderpad=3,
+                font=dict(size=12), row=1, col=1,
+            )
 
     for label, value, dash in [
         ("Original FV", v.get("Original Fair Value"), "dash"),
@@ -375,13 +392,41 @@ def chart_figure(ticker, v, history_months):
         if value:
             fig.add_hline(y=value, line_dash=dash, annotation_text=f"{label} ${value:,.2f}", annotation_position="right", row=1, col=1)
 
-    fig.add_trace(go.Scatter(x=df.index, y=rsi, name="RSI 14", line=dict(width=1.5)), row=2, col=1)
-    fig.add_hline(y=70, line_dash="dot", row=2, col=1)
-    fig.add_hline(y=50, line_dash="dot", row=2, col=1)
-    fig.add_hline(y=30, line_dash="dot", row=2, col=1)
+    # Make RSI visually distinct with momentum zones and a prominent live reading.
+    fig.add_hrect(
+        y0=70, y1=100, fillcolor="rgba(220, 53, 69, 0.16)", line_width=0,
+        annotation_text="OVERBOUGHT", annotation_position="top left", row=2, col=1
+    )
+    fig.add_hrect(
+        y0=30, y1=70, fillcolor="rgba(108, 117, 125, 0.035)", line_width=0,
+        row=2, col=1
+    )
+    fig.add_hrect(
+        y0=0, y1=30, fillcolor="rgba(25, 135, 84, 0.16)", line_width=0,
+        annotation_text="OVERSOLD", annotation_position="bottom left", row=2, col=1
+    )
+    fig.add_trace(go.Scatter(
+        x=df.index, y=rsi, name="RSI 14",
+        mode="lines", line=dict(width=3.5, color="#7C3AED"),
+        hovertemplate="RSI %{y:.1f}<extra></extra>"
+    ), row=2, col=1)
+    fig.add_hline(y=70, line_dash="dash", line_width=2, line_color="#DC3545",
+                  annotation_text="70", annotation_position="right", row=2, col=1)
+    fig.add_hline(y=50, line_dash="dot", line_width=1.5, line_color="#6C757D",
+                  annotation_text="50", annotation_position="right", row=2, col=1)
+    fig.add_hline(y=30, line_dash="dash", line_width=2, line_color="#198754",
+                  annotation_text="30", annotation_position="right", row=2, col=1)
     latest_rsi = sf(rsi.dropna().iloc[-1]) if not rsi.dropna().empty else None
     if latest_rsi is not None:
-        fig.add_annotation(x=df.index[-1], y=latest_rsi, text=f"RSI {latest_rsi:.1f}", showarrow=True, row=2, col=1)
+        marker_color = "#DC3545" if latest_rsi >= 70 else "#198754" if latest_rsi <= 30 else "#7C3AED"
+        fig.add_trace(go.Scatter(
+            x=[df.index[-1]], y=[latest_rsi], name="Current RSI",
+            mode="markers+text", text=[f"  {latest_rsi:.1f}"], textposition="middle right",
+            marker=dict(size=13, color=marker_color, line=dict(width=2, color="white")),
+            textfont=dict(size=15, color=marker_color),
+            hovertemplate=f"Current RSI: {latest_rsi:.1f}<extra></extra>",
+            showlegend=False
+        ), row=2, col=1)
 
     values = pd.concat([close.loc[df.index], upper, lower]).dropna()
     extras = [x for x in (v.get("Original Fair Value"), v.get("Relative Fair Value")) if x]
@@ -390,12 +435,17 @@ def chart_figure(ticker, v, history_months):
         ymax = max([values.max()] + extras)
         pad = max((ymax - ymin) * 0.08, ymax * 0.01)
         fig.update_yaxes(range=[ymin-pad, ymax+pad], side="right", row=1, col=1)
-    fig.update_yaxes(range=[0, 100], side="right", row=2, col=1)
+    fig.update_yaxes(
+        range=[0, 100], side="right", row=2, col=1,
+        tickmode="array", tickvals=[0, 20, 30, 40, 50, 60, 70, 80, 100],
+        gridcolor="rgba(128,128,128,0.18)", title_text="RSI"
+    )
     fig.update_layout(
         title=f"{ticker} — Price, Bollinger Bands, Fair Values and RSI",
-        height=760, xaxis_rangeslider_visible=False, hovermode="x unified",
+        height=1020, xaxis_rangeslider_visible=False, hovermode="x unified",
+        dragmode="zoom",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        margin=dict(l=20, r=110, t=85, b=20),
+        margin=dict(l=20, r=190, t=85, b=30),
     )
     return fig
 
@@ -785,7 +835,17 @@ if active_section == "Price vs EPS":
                 else:
                     text = value or "N/A"
                 c.metric(label, text)
-            st.plotly_chart(chart_figure(ticker, v, history_months), use_container_width=True, config={"displaylogo": False})
+            st.plotly_chart(
+                chart_figure(ticker, v, history_months),
+                use_container_width=True,
+                config={
+                    "displaylogo": False,
+                    "scrollZoom": True,
+                    "displayModeBar": True,
+                    "modeBarButtonsToAdd": ["drawline", "eraseshape"],
+                    "responsive": True,
+                },
+            )
             left, right = st.columns(2)
             with left:
                 st.subheader("Valuation methods")
