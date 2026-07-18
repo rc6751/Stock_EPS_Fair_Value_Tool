@@ -241,6 +241,14 @@ def company_name(ticker: str):
         return ticker
 
 
+def symbol_company(ticker: str):
+    symbol = str(ticker or "").upper().strip()
+    if not symbol:
+        return ""
+    name = company_name(symbol)
+    return symbol if not name or name.upper() == symbol else f"{symbol} {name}"
+
+
 @st.cache_data(ttl=900, show_spinner=False)
 def get_history(ticker: str, period="2y", interval="1d"):
     df = yf.download(ticker, period=period, interval=interval, auto_adjust=False, progress=False, threads=False)
@@ -496,7 +504,7 @@ def chart_figure(ticker, v, history_months):
         gridcolor="rgba(128,128,128,0.18)", title_text="RSI"
     )
     fig.update_layout(
-        title=f"{v.get('Company Name', ticker)} ({ticker}) — Price, Bollinger Bands, Fair Values and RSI",
+        title=f"{ticker} {v.get('Company Name', ticker)} — Price, Bollinger Bands, Fair Values and RSI",
         height=1120, xaxis_rangeslider_visible=False, hovermode="x unified",
         dragmode="zoom",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
@@ -746,7 +754,7 @@ def render_homepage():
             st.markdown(
                 f"""
                 <div style="padding:22px 24px;border:1px solid rgba(128,128,128,.24);border-radius:16px;background:rgba(128,128,128,.035);margin:8px 0 18px">
-                  <div style="font-size:1.55rem;font-weight:800;letter-spacing:-.02em">{q['name']} ({q['ticker']})</div>
+                  <div style="font-size:1.55rem;font-weight:800;letter-spacing:-.02em">{q['ticker']} {q['name']}</div>
                   <div style="opacity:.65;font-size:.84rem;margin-top:2px">{exchange_line}</div>
                   <div style="display:flex;align-items:baseline;gap:14px;margin-top:14px;flex-wrap:wrap">
                     <span style="font-size:2.75rem;font-weight:850;letter-spacing:-.045em">{money(q['price'])}</span>
@@ -796,7 +804,7 @@ def render_homepage():
         for rank, row in enumerate(active, 1):
             a,b,c,d,e = st.columns([.5,1.2,3,1.4,1.2])
             a.write(f"**{rank}**")
-            if b.button(f"{row['ticker']} · {row['name']}", key=f"active_{rank}_{row['ticker']}", use_container_width=True):
+            if b.button(f"{row['ticker']} {row['name']}", key=f"active_{rank}_{row['ticker']}", use_container_width=True):
                 st.session_state.home_quote_ticker = row["ticker"]
                 st.rerun()
             c.write(row["name"])
@@ -948,7 +956,6 @@ if active_section == "Watchlists":
     else:
         st.caption("Click any row to load that ticker directly into the chart and Options Finder.")
     watch_df = watch_df.rename(columns={"Dividend Yield %": "Div.Yield %"})
-
     # Show the strongest-ranked stocks first while keeping Streamlit's
     # interactive header sorting available to the user.
     if "Score" in watch_df.columns:
@@ -964,9 +971,12 @@ if active_section == "Watchlists":
     ])
     remaining_columns = [col for col in watch_df.columns if col not in preferred_order]
     watch_df = watch_df[[col for col in preferred_order if col in watch_df.columns] + remaining_columns]
+    watch_display_df = watch_df.copy()
+    watch_display_df.insert(0, "Symbol Company", watch_display_df.apply(lambda row: f"{str(row['Ticker']).upper()} {row['Company Name']}", axis=1))
+    watch_display_df = watch_display_df.drop(columns=["Ticker", "Company Name"], errors="ignore")
 
     event = st.dataframe(
-        watch_df,
+        watch_display_df,
         key=f"watchlist_table_{category}",
         use_container_width=True,
         hide_index=True,
@@ -1031,7 +1041,7 @@ if active_section == "Paper Trading":
             ).upper().strip()
             if pticker:
                 resolved_name = company_name(pticker)
-                st.caption(f"Company / asset name: {resolved_name}")
+                st.caption(f"{pticker} {resolved_name}")
             action = p2.selectbox("Action", ["BUY", "SELL"], key=f"paper_action_{asset_type}")
             quantity_label = "Shares" if asset_type == "Stock" else "Contracts"
             quantity = p3.number_input(
@@ -1169,20 +1179,24 @@ if active_section == "Paper Trading":
     else:
         display_trades = trades.rename(columns={"shares": "quantity"}).copy()
         display_trades.insert(4, "company_name", display_trades["ticker"].map(company_name))
+        display_trades.insert(4, "symbol_company", display_trades["ticker"].map(symbol_company))
         edited = st.data_editor(
             display_trades,
             use_container_width=True,
             hide_index=True,
-            disabled=["id", "company_name"],
+            disabled=["id", "symbol_company", "company_name"],
             num_rows="fixed",
             key="trade_editor",
             column_config={
+                "symbol_company": st.column_config.TextColumn("Symbol Company"),
+                "ticker": st.column_config.TextColumn("Ticker (data key)"),
+                "company_name": st.column_config.TextColumn("Company Name"),
                 "price": st.column_config.NumberColumn("Price", format="$%.2f"),
                 "multiplier": st.column_config.NumberColumn("Multiplier", format="%.2f"),
             },
         )
         trade_options = {
-            f"ID {int(r.id)} | {str(r.action).upper()} {float(r.quantity):g} {str(r.company_name)} ({str(r.ticker).upper()}) @ ${float(r.price):,.2f}": int(r.id)
+            f"ID {int(r.id)} | {str(r.action).upper()} {float(r.quantity):g} {str(r.ticker).upper()} {str(r.company_name)} @ ${float(r.price):,.2f}": int(r.id)
             for _, r in display_trades.iterrows()
         }
         selected_trade_label = st.selectbox("Selected trade", list(trade_options.keys()), key="selected_trade_action")
@@ -1254,7 +1268,7 @@ if active_section == "Backtesting":
     years = int(b3.number_input("Years", min_value=1, max_value=100, value=5, step=1))
     reinvest = b4.checkbox("Reinvest dividends", value=True)
     if bticker:
-        st.caption(f"Company: {company_name(bticker)}")
+        st.caption(symbol_company(bticker))
     st.caption(f"Backtest period: {years} year{'s' if years != 1 else ''}")
 
     if st.button("Run Backtest"):
@@ -1299,7 +1313,7 @@ if active_section == "Backtesting":
                 f"{hist.index[-1].date():%b %d, %Y} ({elapsed_years:.2f} years)."
             )
             fig_bt = go.Figure(go.Scatter(x=hist.index, y=values, name="Portfolio Value"))
-            fig_bt.update_layout(title=f"{company_name(bticker)} ({bticker}) Backtest", height=500, yaxis_title="Value ($)", hovermode="x unified")
+            fig_bt.update_layout(title=f"{symbol_company(bticker)} Backtest", height=500, yaxis_title="Value ($)", hovermode="x unified")
             st.plotly_chart(fig_bt, use_container_width=True)
         except Exception as exc:
             st.error(str(exc))
@@ -1322,7 +1336,7 @@ if active_section == "Options Finder":
 
     current_option_price = None
     if oticker:
-        st.caption(f"Company: {company_name(oticker)}")
+        st.caption(symbol_company(oticker))
         try:
             current_option_price = quick_quote(oticker)["price"]
         except Exception:
