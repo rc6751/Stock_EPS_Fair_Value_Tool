@@ -69,9 +69,9 @@ div.stButton > button {
 .brandname {font-weight:850;font-size:1.15rem;letter-spacing:-.02em;}
 .brandtag {font-size:.78rem;opacity:.7;}
 .hero {
-  position:relative; overflow:hidden; min-height:520px; border-radius:24px; padding:64px 62px;
+  position:relative; overflow:hidden; min-height:340px; border-radius:24px; padding:42px 50px 24px 50px;
   background:linear-gradient(135deg,#071226 0%,#102451 52%,#0a3a5e 100%);
-  color:white; box-shadow:0 24px 70px rgba(4,18,48,.22); margin:8px 0 28px;
+  color:white; box-shadow:0 24px 70px rgba(4,18,48,.22); margin:8px 0 12px;
 }
 .hero:before {content:"";position:absolute;width:480px;height:480px;border-radius:50%;right:-120px;top:-190px;background:radial-gradient(circle,rgba(34,211,238,.35),rgba(37,99,235,0));}
 .hero:after {content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(to right,transparent 0%,black 55%);}
@@ -532,10 +532,7 @@ def render_homepage():
       </div>
     </section>
     """, unsafe_allow_html=True)
-    with launch_mid:
-        if st.button("Explore Watchlists", use_container_width=True, key="hero_watchlists"):
-            st.session_state.active_section = "Watchlists"
-            st.rerun()
+
 
     st.markdown('<div class="section-title">Instant market quote</div><div class="section-copy">Enter a stock symbol for a Yahoo Finance-style snapshot, then open the complete analysis.</div>', unsafe_allow_html=True)
     q1, q2 = st.columns([5,1])
