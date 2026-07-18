@@ -446,22 +446,6 @@ def chart_figure(ticker, v, history_months):
                 font=dict(size=17), row=1, col=1,
             )
 
-    current_price = sf(df["Close"].iloc[-1]) if not df.empty else None
-    if current_price is not None:
-        fig.add_hline(
-            y=current_price, line_width=5, line_dash="solid",
-            annotation_text=f"CURRENT ${current_price:,.2f}",
-            annotation_position="right", row=1, col=1
-        )
-        fig.add_trace(go.Scatter(
-            x=[last_x], y=[current_price], name="Current Price",
-            mode="markers+text", text=[f"  ${current_price:,.2f}"],
-            textposition="middle right",
-            marker=dict(size=18, line=dict(width=3, color="white")),
-            textfont=dict(size=19), showlegend=False,
-            hovertemplate=f"Current Price: ${current_price:,.2f}<extra></extra>"
-        ), row=1, col=1)
-
     original_fv = sf(v.get("Original Fair Value"))
     relative_fv = sf(v.get("Relative Fair Value"))
 
@@ -743,7 +727,7 @@ def render_navigation(key_prefix="nav"):
             if st.button(
                 f"{icon}  {section_name}",
                 key=f"{key_prefix}_{section_name}",
-                use_container_width=True,
+                use_container_width=False,
                 type="primary" if st.session_state.active_section == section_name else "secondary",
             ):
                 st.session_state.active_section = section_name
@@ -1030,15 +1014,18 @@ if active_section == "Watchlists":
         on_select="rerun",
         selection_mode="single-row",
         column_config={
-            "Price": st.column_config.NumberColumn(format="$%.2f"),
-            "Original Fair Value": st.column_config.NumberColumn(format="$%.2f"),
-            "Relative Fair Value": st.column_config.NumberColumn(format="$%.2f"),
-            "P/E": st.column_config.NumberColumn(format="%.2f"),
-            "Forward EPS": st.column_config.NumberColumn(format="%.2f"),
-            "% of Total Portfolio": st.column_config.NumberColumn(format="%.2f%%"),
-            "Div.Yield %": st.column_config.NumberColumn(format="%.2f%%"),
-            "52W Low": st.column_config.NumberColumn(format="$%.2f"),
-            "52W High": st.column_config.NumberColumn(format="$%.2f"),
+            "Symbol Company": st.column_config.TextColumn(width=260),
+            "Price": st.column_config.NumberColumn(format="$%.2f", width=105),
+            "Score": st.column_config.NumberColumn(width=85),
+            "Original Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
+            "Relative Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
+            "Signal": st.column_config.TextColumn(width=115),
+            "P/E": st.column_config.NumberColumn(format="%.2f", width=90),
+            "Forward EPS": st.column_config.NumberColumn(format="%.2f", width=125),
+            "% of Total Portfolio": st.column_config.NumberColumn(format="%.2f%%", width=170),
+            "Div.Yield %": st.column_config.NumberColumn(format="%.2f%%", width=125),
+            "52W Low": st.column_config.NumberColumn(format="$%.2f", width=105),
+            "52W High": st.column_config.NumberColumn(format="$%.2f", width=105),
         }
     )
     selected_rows = event.selection.rows if event and hasattr(event, "selection") else []
