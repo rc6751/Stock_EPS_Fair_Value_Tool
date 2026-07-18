@@ -401,9 +401,21 @@ def chart_figure(ticker, v, history_months):
             hovertemplate=f"Current Price: ${current_price:,.2f}<extra></extra>"
         ), row=1, col=1)
 
+    original_fv = sf(v.get("Original Fair Value"))
+    relative_fv = sf(v.get("Relative Fair Value"))
+
+    # Keep Relative FV off the chart when it is an outlier versus Original FV.
+    # A 30% maximum difference keeps the price scale useful while preserving
+    # the underlying Relative FV calculation elsewhere in the app.
+    relative_fv_for_chart = None
+    if original_fv and original_fv > 0 and relative_fv and relative_fv > 0:
+        relative_gap_pct = abs(relative_fv - original_fv) / original_fv
+        if relative_gap_pct <= 0.30:
+            relative_fv_for_chart = relative_fv
+
     for label, value, dash in [
-        ("Original FV", v.get("Original Fair Value"), "dash"),
-        ("Relative FV", v.get("Relative Fair Value"), "dot"),
+        ("Original FV", original_fv, "dash"),
+        ("Relative FV", relative_fv_for_chart, "dot"),
     ]:
         if value:
             fig.add_hline(
@@ -449,7 +461,7 @@ def chart_figure(ticker, v, history_months):
         ), row=2, col=1)
 
     values = pd.concat([close.loc[df.index], upper, lower]).dropna()
-    extras = [x for x in (v.get("Original Fair Value"), v.get("Relative Fair Value")) if x]
+    extras = [x for x in (original_fv, relative_fv_for_chart) if x]
     if not values.empty:
         ymin = min([values.min()] + extras)
         ymax = max([values.max()] + extras)
