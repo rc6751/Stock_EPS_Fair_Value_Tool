@@ -446,6 +446,16 @@ def chart_figure(ticker, v, history_months):
                 font=dict(size=17), row=1, col=1,
             )
 
+    # Mark the live/current price with a subtle light-green dotted reference line.
+    current_price = sf(v.get("Current Price"))
+    if not current_price or current_price <= 0:
+        current_price = float(df["Close"].dropna().iloc[-1])
+    fig.add_hline(
+        y=current_price, line_dash="dot", line_width=2, line_color="#90EE90",
+        annotation_text=f"Current Price ${current_price:,.2f}",
+        annotation_position="right", row=1, col=1
+    )
+
     original_fv = sf(v.get("Original Fair Value"))
     relative_fv = sf(v.get("Relative Fair Value"))
 
