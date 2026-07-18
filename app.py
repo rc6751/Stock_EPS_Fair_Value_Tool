@@ -673,17 +673,6 @@ if active_section == "Home":
     render_homepage()
 else:
     st.caption("Yahoo Finance data is unofficial and may be delayed or rate-limited.")
-    with st.sidebar:
-        st.header("Stock analysis")
-        ticker = st.text_input("Ticker", key="selected_ticker").upper().strip()
-        history_months = st.radio("Chart history", [1, 3, 6], index=1, horizontal=True, format_func=lambda x: f"{x}M")
-        mg_text = st.text_input("Manual EPS growth %", key="manual_growth")
-        pe_text = st.text_input("Manual fair P/E", key="manual_pe")
-        st.button("Analyze", type="primary", use_container_width=True)
-        if st.button("Clear data cache", use_container_width=True):
-            st.cache_data.clear()
-            st.success("Cached Yahoo data cleared.")
-    st.divider()
 
 if active_section == "Price vs EPS":
     if ticker:
@@ -768,6 +757,11 @@ if active_section == "Watchlists":
         st.rerun()
 
 if active_section == "Paper Trading":
+    new_cash = st.number_input("Starting cash", min_value=0.0, value=float(starting_cash()), step=1000.0)
+    if st.button("Save starting cash"):
+        save_starting_cash(new_cash)
+        st.success("Starting cash saved.")
+
     trades = load_trades()
     cash, mv, account, realized, unrealized, positions = portfolio_summary(trades)
     a, b, c, d, e = st.columns(5)
@@ -824,10 +818,6 @@ if active_section == "Paper Trading":
                 con.execute("DELETE FROM trades WHERE id=?", (int(delete_id),))
                 con.commit()
             st.rerun()
-    new_cash = st.number_input("Starting cash", min_value=0.0, value=float(starting_cash()), step=1000.0)
-    if st.button("Save starting cash"):
-        save_starting_cash(new_cash)
-        st.success("Starting cash saved.")
 
 if active_section == "Backtesting":
     st.subheader("Single-stock dividend-reinvestment backtest")
