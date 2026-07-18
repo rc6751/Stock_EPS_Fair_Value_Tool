@@ -662,6 +662,7 @@ section_names = [
 ]
 active_section = st.session_state.active_section
 if active_section != "Home":
+    st.markdown('<div style="height:2.75rem"></div>', unsafe_allow_html=True)
     render_navigation("nav")
 
 ticker = st.session_state.selected_ticker.upper().strip()
