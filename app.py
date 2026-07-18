@@ -102,13 +102,7 @@ APP_DIR = Path(__file__).resolve().parent
 DB_PATH = APP_DIR / "paper_trading.db"
 
 CATEGORY_LISTS = {
-    "Top 50": [
-        "NVDA","TSLA","AAPL","AMD","AMZN","SOFI","PLTR","INTC","F","BAC",
-        "MU","NIO","MARA","RIVN","LCID","T","PFE","CCL","AAL","SNAP",
-        "MSFT","META","GOOGL","NFLX","AVGO","QCOM","CSCO","ORCL","CRM","UBER",
-        "SHOP","COIN","HOOD","PYPL","XYZ","JPM","WFC","C","XOM","CVX",
-        "KO","WMT","DIS","BA","GM","DAL","RBLX","DKNG","RIOT","SOUN"
-    ],
+    "Top 35": ["NVDA","TSLA","AAPL","AMD","AMZN","SOFI","PLTR","INTC","F","BAC","MU","NIO","MARA","RIVN","LCID","T","PFE","CCL","AAL","SNAP","MSFT","META","GOOGL","NFLX","AVGO","QCOM","CSCO","ORCL","CRM","UBER","SHOP","COIN","HOOD","PYPL","XYZ"],
     "Magnificent 7": ["AAPL","MSFT","AMZN","GOOGL","META","NVDA","TSLA"],
     "Dividend Kings": [
         "ABM","ADP","AWR","BDX","BKH","CINF","CL","CWT","DOV","EMR",
@@ -1012,64 +1006,83 @@ if active_section == "Paper Trading":
     e.metric("Realized P&L", f"${realized:,.2f}")
 
     with st.expander("Paper trade entry", expanded=True):
-        asset_type = st.selectbox("Asset type", ["Stock", "Option", "Future"], key="paper_asset_type")
+        def render_paper_trade_entry(asset_type):
+            p1, p2, p3, p4, p5 = st.columns(5)
+            default_symbol = st.session_state.selected_ticker if asset_type == "Stock" else ""
+            pticker = p1.text_input(
+                "Symbol",
+                value=default_symbol,
+                key=f"paper_symbol_{asset_type}",
+                placeholder="AAPL, AAPL option symbol, or ES=F",
+            ).upper().strip()
+            action = p2.selectbox("Action", ["BUY", "SELL"], key=f"paper_action_{asset_type}")
+            quantity_label = "Shares" if asset_type == "Stock" else "Contracts"
+            quantity = p3.number_input(
+                quantity_label,
+                min_value=0.01,
+                value=1.0,
+                step=1.0,
+                key=f"paper_qty_{asset_type}",
+            )
 
-        p1, p2, p3, p4, p5 = st.columns(5)
-        default_symbol = st.session_state.selected_ticker if asset_type == "Stock" else ""
-        pticker = p1.text_input(
-            "Symbol",
-            value=default_symbol,
-            key=f"paper_symbol_{asset_type}",
-            placeholder="AAPL, AAPL option symbol, or ES=F",
-        ).upper().strip()
-        action = p2.selectbox("Action", ["BUY", "SELL"], key="paper_action")
-        quantity_label = "Shares" if asset_type == "Stock" else "Contracts"
-        quantity = p3.number_input(quantity_label, min_value=0.01, value=1.0, step=1.0, key=f"paper_qty_{asset_type}")
+            default_price = 0.0
+            if pticker:
+                try:
+                    default_price = float(quick_quote(pticker)["price"] or 0.0)
+                except Exception:
+                    pass
+            price = p4.number_input(
+                "Trade price",
+                min_value=0.0,
+                value=default_price,
+                step=0.01,
+                key=f"paper_price_{asset_type}",
+            )
+            trade_date = p5.date_input("Date", value=date.today(), key=f"paper_date_{asset_type}")
 
-        default_price = 0.0
-        if pticker:
-            try:
-                default_price = float(quick_quote(pticker)["price"] or 0.0)
-            except Exception:
-                pass
-        price = p4.number_input("Trade price", min_value=0.0, value=default_price, step=0.01, key=f"paper_price_{asset_type}")
-        trade_date = p5.date_input("Date", value=date.today(), key=f"paper_date_{asset_type}")
+            d1, d2 = st.columns([1, 3])
+            default_multiplier = 1.0 if asset_type == "Stock" else 100.0 if asset_type == "Option" else 50.0
+            multiplier = d1.number_input(
+                "Contract multiplier",
+                min_value=0.01,
+                value=default_multiplier,
+                step=1.0,
+                key=f"paper_multiplier_{asset_type}",
+                help="Stocks normally use 1, equity options normally use 100, and futures vary by contract.",
+            )
+            description = d2.text_input(
+                "Description",
+                key=f"paper_description_{asset_type}",
+                placeholder="Optional: AAPL 190 Call 2026-09-18 or E-mini S&P 500",
+            )
 
-        d1, d2 = st.columns([1, 3])
-        default_multiplier = 1.0 if asset_type == "Stock" else 100.0 if asset_type == "Option" else 50.0
-        multiplier = d1.number_input(
-            "Contract multiplier",
-            min_value=0.01,
-            value=default_multiplier,
-            step=1.0,
-            key=f"paper_multiplier_{asset_type}",
-            help="Stocks normally use 1, equity options normally use 100, and futures vary by contract.",
-        )
-        description = d2.text_input(
-            "Description",
-            key=f"paper_description_{asset_type}",
-            placeholder="Optional: AAPL 190 Call 2026-09-18 or E-mini S&P 500",
-        )
+            estimated_value = quantity * price * multiplier
+            st.caption(f"Estimated trade value: ${estimated_value:,.2f}")
 
-        estimated_value = quantity * price * multiplier
-        st.caption(f"Estimated trade value: ${estimated_value:,.2f}")
+            if st.button("Save Paper Trade", type="primary", key=f"save_paper_trade_{asset_type}"):
+                if not pticker:
+                    st.error("Enter a symbol.")
+                elif price <= 0:
+                    st.error("Enter a trade price greater than zero.")
+                else:
+                    with sqlite3.connect(DB_PATH) as con:
+                        con.execute(
+                            """INSERT INTO trades
+                            (trade_date, action, ticker, shares, price, asset_type, multiplier, description)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                            (trade_date.isoformat(), action, pticker, quantity, price, asset_type, multiplier, description),
+                        )
+                        con.commit()
+                    st.success(f"{asset_type} paper trade saved.")
+                    st.rerun()
 
-        if st.button("Save Paper Trade", type="primary"):
-            if not pticker:
-                st.error("Enter a symbol.")
-            elif price <= 0:
-                st.error("Enter a trade price greater than zero.")
-            else:
-                with sqlite3.connect(DB_PATH) as con:
-                    con.execute(
-                        """INSERT INTO trades
-                        (trade_date, action, ticker, shares, price, asset_type, multiplier, description)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (trade_date.isoformat(), action, pticker, quantity, price, asset_type, multiplier, description),
-                    )
-                    con.commit()
-                st.success(f"{asset_type} paper trade saved.")
-                st.rerun()
+        stock_tab, option_tab, future_tab = st.tabs(["Stock", "Option", "Future"])
+        with stock_tab:
+            render_paper_trade_entry("Stock")
+        with option_tab:
+            render_paper_trade_entry("Option")
+        with future_tab:
+            render_paper_trade_entry("Future")
 
     if not positions.empty:
         st.subheader("Open positions")
