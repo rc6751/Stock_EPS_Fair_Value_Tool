@@ -430,7 +430,7 @@ def chart_figure(ticker, v, history_months):
         x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"], name="Price"
     ), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=upper, name="BB Upper", line=dict(width=5)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=mid, name="BB Mid", line=dict(width=7, color="green", dash="dot")), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=mid, name="BB Mid", line=dict(width=5, dash="dot")), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=lower, name="BB Lower", line=dict(width=5), fill="tonexty", fillcolor="rgba(128,128,128,0.14)"), row=1, col=1)
 
     # Show the latest dollar amount at the right end of each Bollinger Band line.
@@ -451,7 +451,7 @@ def chart_figure(ticker, v, history_months):
     if not current_price or current_price <= 0:
         current_price = float(df["Close"].dropna().iloc[-1])
     fig.add_hline(
-        y=current_price, line_dash="dot", line_width=2, line_color="#90EE90",
+        y=current_price, line_dash="dot", line_width=3, line_color="#90EE90",
         annotation_text=f"Current Price ${current_price:,.2f}",
         annotation_position="right", row=1, col=1
     )
