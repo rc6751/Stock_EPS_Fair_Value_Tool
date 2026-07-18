@@ -534,9 +534,6 @@ def render_homepage():
                 st.metric(label, money(mq["price"]), delta)
             except Exception:
                 st.metric(label, "Unavailable")
-            if st.button("View", key=f"market_{symbol}", use_container_width=True):
-                st.session_state.home_quote_ticker = symbol
-                st.rerun()
 
     st.markdown("""
     <section class="hero">
