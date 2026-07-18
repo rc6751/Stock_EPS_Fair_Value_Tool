@@ -523,7 +523,7 @@ def render_navigation(key_prefix="nav"):
                 st.rerun()
 
 def render_homepage():
-    st.markdown('<div class="section-title">Major markets</div><div class="section-copy">Click any market to load its quote below.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Major markets</div><div class="section-copy"></div>', unsafe_allow_html=True)
     market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
     market_cols = st.columns(6)
     for col, (label, symbol) in zip(market_cols, market_assets):
