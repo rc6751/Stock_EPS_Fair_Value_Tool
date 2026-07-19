@@ -159,6 +159,18 @@ div.stButton > button {
 """, unsafe_allow_html=True)
 
 
+
+st.markdown("""
+<style>
+/* watchlist-compact */
+[data-testid="stDataFrame"] table th,
+[data-testid="stDataFrame"] table td{
+    padding:3px 5px !important;
+    font-size:0.88rem !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 APP_DIR = Path(__file__).resolve().parent
 DB_PATH = APP_DIR / "paper_trading.db"
 
@@ -533,7 +545,7 @@ def valuation(ticker: str, manual_growth=None, manual_pe=None):
 
     return {
         "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Original Fair Value": original,
-        "Timing Score": timing_score, "Signal": normalize_signal(signal),
+        "Score": timing_score, "Score": latest_rsi, "Signal": normalize_signal(signal),
         "P/E": pe, "Trailing EPS": trailing, "Forward EPS": forward,
         "EPS Growth %": growth, "Annual Dividend": annual_div,
         "Dividend Yield %": div_yield, "52W Low": low52, "52W High": high52,
@@ -549,7 +561,7 @@ def scan_group(tickers_tuple):
         try:
             v = valuation(ticker)
             rows.append({k: v[k] for k in [
-                "Ticker", "Company Name", "Price", "Original Fair Value", "Timing Score", "Signal",
+                "Ticker", "Company Name", "Price", "Original Fair Value", "Score", "Signal",
                 "P/E", "Forward EPS", "Dividend Yield %", "52W Low", "52W High"
             ]})
         except Exception:
@@ -1132,7 +1144,7 @@ if active_section == "Price vs EPS":
             cols = st.columns(5)
             metrics = [
                 ("Price", v["Price"], "$"), ("Original FV", v["Original Fair Value"], "$"),
-                ("Timing Score", v["Timing Score"], ""),
+                ("Score", v["Score"], ""),
                 ("Signal", normalize_signal(v["Signal"]), ""), ("Dividend Yield", v["Dividend Yield %"], "%"),
             ]
             for c, (label, value, unit) in zip(cols, metrics):
@@ -1209,7 +1221,7 @@ if active_section == "Watchlists":
             scanned = scan_group(tuple(pool_tickers))
         watch_df = (
             scanned[scanned["Signal"] == "BUY"]
-            .sort_values(by="Timing Score", ascending=False, na_position="last")
+            .sort_values(by="Score", ascending=False, na_position="last")
             .head(10)
             .reset_index(drop=True)
         )
@@ -1239,15 +1251,15 @@ if active_section == "Watchlists":
             watch_df["Signal"] = watch_df["Signal"].map(normalize_signal)
         # Show the strongest-ranked stocks first while keeping Streamlit's
         # interactive header sorting available to the user.
-        if "Timing Score" in watch_df.columns:
-            watch_df = watch_df.sort_values(by="Timing Score", ascending=False, na_position="last").reset_index(drop=True)
+        if "Score" in watch_df.columns:
+            watch_df = watch_df.sort_values(by="Score", ascending=False, na_position="last").reset_index(drop=True)
 
         # Keep Score immediately after Price for every watchlist category.
         preferred_order = ["Ticker", "Company Name"]
         if "% of Total Portfolio" in watch_df.columns:
             preferred_order.append("% of Total Portfolio")
         preferred_order.extend([
-            "Price", "Timing Score", "Original Fair Value", "Signal",
+            "Price", "Score", "Original Fair Value", "Signal",
             "P/E", "Forward EPS", "Div.Yield %", "52W Low", "52W High"
         ])
         remaining_columns = [col for col in watch_df.columns if col not in preferred_order]
@@ -1266,7 +1278,7 @@ if active_section == "Watchlists":
             column_config={
                 "Symbol Company": st.column_config.TextColumn(width=260),
                 "Price": st.column_config.NumberColumn(format="$%.2f", width=105),
-                "Timing Score": st.column_config.NumberColumn(format="%d", width=110),
+                "Score": st.column_config.NumberColumn(format="%d", width=110),
                 "Original Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
                 "Signal": st.column_config.TextColumn(width=115),
                 "P/E": st.column_config.NumberColumn(format="%.2f", width=90),
