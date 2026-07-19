@@ -399,6 +399,105 @@ def eps_growth(q):
     return None if latest <= 0 or prior <= 0 else (latest / prior - 1) * 100
 
 
+def calculate_timing_score(ticker: str, current_price, original_fv):
+    """Return a 0-100 entry-timing score from RSI, Bollinger position,
+    valuation discount, and 20-day momentum.
+    """
+    try:
+        hist = get_history(ticker, period="6mo", interval="1d")
+        close = pd.to_numeric(hist["Close"], errors="coerce").dropna()
+        if len(close) < 21:
+            return None
+
+        delta = close.diff()
+        gain = delta.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
+        loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean()
+        rs = gain / loss.replace(0, np.nan)
+        rsi_series = 100 - (100 / (1 + rs))
+        latest_rsi = sf(rsi_series.dropna().iloc[-1]) if not rsi_series.dropna().empty else None
+
+        mid = close.rolling(20).mean()
+        std = close.rolling(20).std()
+        lower = mid - 2 * std
+        upper = mid + 2 * std
+        last = float(close.iloc[-1])
+        latest_lower = sf(lower.iloc[-1])
+        latest_upper = sf(upper.iloc[-1])
+
+        # RSI: oversold readings receive the strongest entry score.
+        if latest_rsi is None:
+            rsi_score = 50.0
+        elif latest_rsi <= 25:
+            rsi_score = 100.0
+        elif latest_rsi <= 30:
+            rsi_score = 90.0
+        elif latest_rsi <= 40:
+            rsi_score = 75.0
+        elif latest_rsi <= 60:
+            rsi_score = 50.0
+        elif latest_rsi <= 70:
+            rsi_score = 30.0
+        else:
+            rsi_score = 10.0
+
+        # Bollinger position: lower-band proximity is more favorable for entry.
+        if latest_lower is None or latest_upper is None or latest_upper <= latest_lower:
+            bollinger_score = 50.0
+        else:
+            band_position = (last - latest_lower) / (latest_upper - latest_lower)
+            if band_position <= 0:
+                bollinger_score = 100.0
+            elif band_position <= 0.20:
+                bollinger_score = 80.0
+            elif band_position <= 0.60:
+                bollinger_score = 50.0
+            elif band_position <= 1.0:
+                bollinger_score = 25.0
+            else:
+                bollinger_score = 10.0
+
+        # Discount to Original FV rewards a larger margin of safety.
+        if original_fv and original_fv > 0 and current_price and current_price > 0:
+            discount_pct = (original_fv - current_price) / original_fv * 100
+            valuation_score = max(0.0, min(100.0, 40.0 + (discount_pct * 2.0)))
+        else:
+            valuation_score = 50.0
+
+        # Moderate 20-day momentum is favored; extended surges are penalized.
+        momentum_20d = (last / float(close.iloc[-21]) - 1) * 100
+        if -8 <= momentum_20d <= 5:
+            momentum_score = 80.0
+        elif -15 <= momentum_20d < -8 or 5 < momentum_20d <= 10:
+            momentum_score = 60.0
+        elif momentum_20d < -15:
+            momentum_score = 35.0
+        else:
+            momentum_score = 25.0
+
+        score = (
+            0.40 * rsi_score
+            + 0.30 * bollinger_score
+            + 0.20 * valuation_score
+            + 0.10 * momentum_score
+        )
+        return int(max(0, min(100, round(score))))
+    except Exception:
+        return None
+
+
+def signal_from_value_and_timing(current_price, original_fv, timing_score):
+    """Base the investment signal only on value versus Original FV and timing."""
+    if not current_price or not original_fv or timing_score is None:
+        return "HOLD"
+
+    value_ratio = current_price / original_fv
+    if value_ratio <= 1.00 and timing_score >= 70:
+        return "BUY"
+    if value_ratio >= 1.15 and timing_score < 50:
+        return "SELL"
+    return "HOLD"
+
+
 def valuation(ticker: str, manual_growth=None, manual_pe=None):
     info = get_info(ticker)
     q = get_quarterly_eps(ticker)
@@ -423,31 +522,22 @@ def valuation(ticker: str, manual_growth=None, manual_pe=None):
 
     sector = info.get("sector") or "Unknown"
     industry = info.get("industry") or "Unknown"
-    relative_pe = INDUSTRY_PE_OVERRIDES.get(industry, SECTOR_PE_DEFAULTS.get(sector, 20.0))
-    relative_eps = forward if forward and forward > 0 else trailing
-    relative = relative_eps * relative_pe if relative_eps and relative_eps > 0 else None
 
     annual_div = sf(info.get("dividendRate")) or 0.0
     div_yield = annual_div / current * 100 if current else 0.0
     low52 = sf(info.get("fiftyTwoWeekLow"))
     high52 = sf(info.get("fiftyTwoWeekHigh"))
 
-    discount = ((original - current) / original * 100) if original and current else None
-    score = 50
-    if discount is not None:
-        score += max(-30, min(30, discount))
-    if growth is not None:
-        score += max(-10, min(10, growth / 3))
-    score = int(max(0, min(100, round(score))))
-    signal = "BUY" if score >= 65 else "HOLD" if score >= 45 else "SELL"
+    timing_score = calculate_timing_score(ticker, current, original)
+    signal = signal_from_value_and_timing(current, original, timing_score)
 
     return {
         "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Original Fair Value": original,
-        "Relative Fair Value": relative, "Score": score, "Signal": normalize_signal(signal),
+        "Timing Score": timing_score, "Signal": normalize_signal(signal),
         "P/E": pe, "Trailing EPS": trailing, "Forward EPS": forward,
         "EPS Growth %": growth, "Annual Dividend": annual_div,
         "Dividend Yield %": div_yield, "52W Low": low52, "52W High": high52,
-        "Sector": sector, "Industry": industry, "Relative P/E": relative_pe,
+        "Sector": sector, "Industry": industry,
         "Methods": methods, "Quarterly EPS": q,
     }
 
@@ -459,7 +549,7 @@ def scan_group(tickers_tuple):
         try:
             v = valuation(ticker)
             rows.append({k: v[k] for k in [
-                "Ticker", "Company Name", "Price", "Original Fair Value", "Relative Fair Value", "Score", "Signal",
+                "Ticker", "Company Name", "Price", "Original Fair Value", "Timing Score", "Signal",
                 "P/E", "Forward EPS", "Dividend Yield %", "52W Low", "52W High"
             ]})
         except Exception:
@@ -526,20 +616,8 @@ def chart_figure(ticker, v, history_months):
     )
 
     original_fv = sf(v.get("Original Fair Value"))
-    relative_fv = sf(v.get("Relative Fair Value"))
-
-    # Keep Relative FV off the chart when it is an outlier versus Original FV.
-    # A 30% maximum difference keeps the price scale useful while preserving
-    # the underlying Relative FV calculation elsewhere in the app.
-    relative_fv_for_chart = None
-    if original_fv and original_fv > 0 and relative_fv and relative_fv > 0:
-        relative_gap_pct = abs(relative_fv - original_fv) / original_fv
-        if relative_gap_pct <= 0.30:
-            relative_fv_for_chart = relative_fv
-
     for label, value, dash in [
         ("Original FV", original_fv, "dash"),
-        ("Relative FV", relative_fv_for_chart, "dot"),
     ]:
         if value:
             fig.add_hline(
@@ -585,7 +663,7 @@ def chart_figure(ticker, v, history_months):
         ), row=2, col=1)
 
     values = pd.concat([close.loc[df.index], upper, lower]).dropna()
-    extras = [x for x in (original_fv, relative_fv_for_chart) if x]
+    extras = [x for x in (original_fv,) if x]
     if not values.empty:
         ymin = min([values.min()] + extras)
         ymax = max([values.max()] + extras)
@@ -614,7 +692,7 @@ def chart_figure(ticker, v, history_months):
         gridcolor="rgba(128,128,128,0.18)", title_text="RSI"
     )
     fig.update_layout(
-        title=f"{ticker} {v.get('Company Name', ticker)} — Price, Bollinger Bands, Fair Values and RSI",
+        title=f"{ticker} {v.get('Company Name', ticker)} — Price, Bollinger Bands, Original FV and RSI",
         height=1120, xaxis_rangeslider_visible=False, hovermode="x unified",
         dragmode="zoom",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
@@ -1051,10 +1129,10 @@ if active_section == "Price vs EPS":
             with st.spinner(f"Loading {ticker}..."):
                 v = valuation(ticker, mg, mpe)
             st.markdown(f"### {symbol_company(v['Ticker'])}")
-            cols = st.columns(6)
+            cols = st.columns(5)
             metrics = [
                 ("Price", v["Price"], "$"), ("Original FV", v["Original Fair Value"], "$"),
-                ("Relative FV", v["Relative Fair Value"], "$"), ("Score", v["Score"], ""),
+                ("Timing Score", v["Timing Score"], ""),
                 ("Signal", normalize_signal(v["Signal"]), ""), ("Dividend Yield", v["Dividend Yield %"], "%"),
             ]
             for c, (label, value, unit) in zip(cols, metrics):
@@ -1082,8 +1160,8 @@ if active_section == "Price vs EPS":
             with right:
                 st.subheader("Fundamentals")
                 fundamentals = pd.DataFrame({
-                    "Metric": ["Sector", "Industry", "Trailing EPS", "Forward EPS", "P/E used", "EPS Growth", "Relative P/E"],
-                    "Value": [v["Sector"], v["Industry"], v["Trailing EPS"], v["Forward EPS"], v["P/E"], v["EPS Growth %"], v["Relative P/E"]]
+                    "Metric": ["Sector", "Industry", "Trailing EPS", "Forward EPS", "P/E used", "EPS Growth"],
+                    "Value": [v["Sector"], v["Industry"], v["Trailing EPS"], v["Forward EPS"], v["P/E"], v["EPS Growth %"]]
                 })
                 st.dataframe(fundamentals, use_container_width=True, hide_index=True)
         except Exception as exc:
@@ -1131,7 +1209,7 @@ if active_section == "Watchlists":
             scanned = scan_group(tuple(pool_tickers))
         watch_df = (
             scanned[scanned["Signal"] == "BUY"]
-            .sort_values(by="Score", ascending=False, na_position="last")
+            .sort_values(by="Timing Score", ascending=False, na_position="last")
             .head(10)
             .reset_index(drop=True)
         )
@@ -1161,15 +1239,15 @@ if active_section == "Watchlists":
             watch_df["Signal"] = watch_df["Signal"].map(normalize_signal)
         # Show the strongest-ranked stocks first while keeping Streamlit's
         # interactive header sorting available to the user.
-        if "Score" in watch_df.columns:
-            watch_df = watch_df.sort_values(by="Score", ascending=False, na_position="last").reset_index(drop=True)
+        if "Timing Score" in watch_df.columns:
+            watch_df = watch_df.sort_values(by="Timing Score", ascending=False, na_position="last").reset_index(drop=True)
 
         # Keep Score immediately after Price for every watchlist category.
         preferred_order = ["Ticker", "Company Name"]
         if "% of Total Portfolio" in watch_df.columns:
             preferred_order.append("% of Total Portfolio")
         preferred_order.extend([
-            "Price", "Score", "Original Fair Value", "Relative Fair Value", "Signal",
+            "Price", "Timing Score", "Original Fair Value", "Signal",
             "P/E", "Forward EPS", "Div.Yield %", "52W Low", "52W High"
         ])
         remaining_columns = [col for col in watch_df.columns if col not in preferred_order]
@@ -1188,9 +1266,8 @@ if active_section == "Watchlists":
             column_config={
                 "Symbol Company": st.column_config.TextColumn(width=260),
                 "Price": st.column_config.NumberColumn(format="$%.2f", width=105),
-                "Score": st.column_config.NumberColumn(width=85),
+                "Timing Score": st.column_config.NumberColumn(format="%d", width=110),
                 "Original Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
-                "Relative Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
                 "Signal": st.column_config.TextColumn(width=115),
                 "P/E": st.column_config.NumberColumn(format="%.2f", width=90),
                 "Forward EPS": st.column_config.NumberColumn(format="%.2f", width=125),
