@@ -15,19 +15,35 @@ import yfinance as yf
 st.set_page_config(page_title="Stock_EPS_Fair_Value_Tool", page_icon="📈", layout="wide")
 
 # Keep the app at the top after an initial load or Streamlit rerun.
+# NOTE: components.html() only re-executes its embedded <script> when the
+# HTML content actually changes between reruns. A static string here means
+# the scroll-to-top only fires once (the very first load) — on every
+# subsequent rerun (e.g. clicking a nav button to switch sections) the
+# iframe content is unchanged, so the script never re-fires and the browser
+# keeps whatever scroll position it had, which can land near the bottom of
+# the newly rendered (often differently-sized) page. Embedding a per-rerun
+# nonce forces the component to remount every time, so the scroll script
+# always runs on navigation. A few staggered retries also catch content
+# (like live quote data) that finishes loading and shifts page height after
+# the initial paint.
+import uuid as _uuid
+_scroll_nonce = _uuid.uuid4().hex
 components.html(
-    """<script>
-    const scrollTop = () => {
-        try {
-            window.parent.scrollTo({top: 0, left: 0, behavior: 'instant'});
+    f"""<script>
+    const scrollTop = () => {{
+        try {{
+            window.parent.scrollTo({{top: 0, left: 0, behavior: 'instant'}});
             const main = window.parent.document.querySelector('section.main');
-            if (main) main.scrollTo({top: 0, left: 0, behavior: 'instant'});
-        } catch (e) {}
-    };
+            if (main) main.scrollTo({{top: 0, left: 0, behavior: 'instant'}});
+        }} catch (e) {{}}
+    }};
     scrollTop();
     setTimeout(scrollTop, 50);
     setTimeout(scrollTop, 250);
-    </script>""",
+    setTimeout(scrollTop, 500);
+    setTimeout(scrollTop, 900);
+    </script>
+    <!-- nonce: {_scroll_nonce} -->""",
     height=0,
 )
 
