@@ -40,7 +40,10 @@ components.html(
             'section.main',
             '.main',
         ];
+        let active = true;
+
         const scrollTop = () => {{
+            if (!active) return;
             try {{
                 win.scrollTo({{top: 0, left: 0, behavior: 'instant'}});
                 doc.documentElement.scrollTop = 0;
@@ -52,23 +55,36 @@ components.html(
             }} catch (e) {{}}
         }};
 
+        const stop = () => {{
+            active = false;
+            try {{ win.clearInterval(interval); }} catch (e) {{}}
+            try {{ observer.disconnect(); }} catch (e) {{}}
+        }};
+
+        // Any real user scroll intent permanently cancels the auto-scroll
+        // for this render, so it never fights manual scrolling.
+        const userInputEvents = ['wheel', 'touchmove', 'keydown', 'mousedown'];
+        userInputEvents.forEach((evt) => {{
+            try {{ doc.addEventListener(evt, stop, {{ once: true, passive: true }}); }} catch (e) {{}}
+        }});
+
         scrollTop();
 
-        // Keep re-applying for ~2s in case late content (e.g. live quotes)
-        // finishes loading and shifts page height after the initial paint.
+        // Keep re-applying briefly in case late content (e.g. live quotes)
+        // finishes loading and shifts page height after the initial paint —
+        // but only until the user actually tries to scroll.
         let ticks = 0;
         const interval = win.setInterval(() => {{
             scrollTop();
             ticks += 1;
-            if (ticks > 20) win.clearInterval(interval);
-        }}, 100);
+            if (ticks > 8) stop();
+        }}, 150);
 
-        // Also react immediately to any DOM changes (new content inserted)
-        // for the first couple seconds after this rerun.
+        let observer;
         try {{
-            const observer = new MutationObserver(() => scrollTop());
+            observer = new MutationObserver(() => scrollTop());
             observer.observe(doc.body, {{childList: true, subtree: true}});
-            win.setTimeout(() => observer.disconnect(), 2000);
+            win.setTimeout(stop, 1200);
         }} catch (e) {{}}
     }})();
     </script>
