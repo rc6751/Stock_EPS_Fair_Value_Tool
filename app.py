@@ -11,6 +11,7 @@ from plotly.subplots import make_subplots
 import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
+import pandas_datareader.data as web
 
 st.set_page_config(page_title="Stock_EPS_Fair_Value_Tool", page_icon="📈", layout="wide")
 
@@ -97,7 +98,6 @@ div.stButton > button {
 </style>
 """, unsafe_allow_html=True)
 
-
 APP_DIR = Path(__file__).resolve().parent
 DB_PATH = APP_DIR / "paper_trading.db"
 
@@ -130,35 +130,12 @@ CATEGORY_LISTS = {
 
 BUFFETT_13F_REPORT_DATE = "March 31, 2026"
 BUFFETT_PORTFOLIO_WEIGHTS = {
-    "AAPL": 21.99,
-    "AXP": 17.43,
-    "KO": 11.56,
-    "BAC": 9.52,
-    "CVX": 6.64,
-    "OXY": 6.55,
-    "GOOGL": 5.93,
-    "CB": 4.24,
-    "MCO": 4.09,
-    "KHC": 2.78,
-    "DVA": 1.76,
-    "KR": 1.38,
-    "SIRI": 1.09,
-    "DAL": 1.01,
-    "VRSN": 0.85,
-    "COF": 0.50,
-    "NYT": 0.48,
-    "ALLY": 0.43,
-    "GOOG": 0.39,
-    "LLYVK": 0.38,
-    "LEN": 0.33,
-    "NUE": 0.25,
-    "LLYVA": 0.17,
-    "LPX": 0.16,
-    "STZ": 0.04,
-    "NVR": 0.03,
-    "M": 0.02,
-    "LEN-B": 0.01,
-    "JEF": 0.01
+    "AAPL": 21.99, "AXP": 17.43, "KO": 11.56, "BAC": 9.52, "CVX": 6.64,
+    "OXY": 6.55, "GOOGL": 5.93, "CB": 4.24, "MCO": 4.09, "KHC": 2.78,
+    "DVA": 1.76, "KR": 1.38, "SIRI": 1.09, "DAL": 1.01, "VRSN": 0.85,
+    "COF": 0.50, "NYT": 0.48, "ALLY": 0.43, "GOOG": 0.39, "LLYVK": 0.38,
+    "LEN": 0.33, "NUE": 0.25, "LLYVA": 0.17, "LPX": 0.16, "STZ": 0.04,
+    "NVR": 0.03, "M": 0.02, "LEN-B": 0.01, "JEF": 0.01
 }
 
 SECTOR_PE_DEFAULTS = {
@@ -176,7 +153,6 @@ INDUSTRY_PE_OVERRIDES = {
     "Oil & Gas E&P": 11.0, "Drug Manufacturers - General": 20.0,
     "Medical Devices": 24.0, "REIT - Retail": 17.0, "REIT - Industrial": 20.0,
 }
-
 
 def init_db():
     with sqlite3.connect(DB_PATH) as con:
@@ -202,7 +178,6 @@ def init_db():
         con.execute("INSERT OR IGNORE INTO settings(key,value) VALUES('starting_cash','100000')")
         con.commit()
 
-
 def sf(value):
     try:
         if value is None or str(value).strip() == "":
@@ -212,12 +187,9 @@ def sf(value):
     except Exception:
         return None
 
-
 def normalize_signal(value):
-    """Use BUY instead of BUY everywhere in the application."""
     signal = str(value or "").strip().upper()
     return "BUY" if signal == "BUY" else value
-
 
 @st.cache_data(ttl=900, show_spinner=False)
 def get_info(ticker: str):
@@ -234,7 +206,38 @@ def get_info(ticker: str):
         info["currentPrice"] = fast.get("last_price")
     return info
 
+def get_history_stooq(ticker: str):
+    """Fallback function to fetch clean historical data from Stooq if yfinance fails."""
+    symbol = f"{ticker.upper().strip()}.US"
+    try:
+        df = web.DataReader(symbol, 'stooq')
+        if not df.empty:
+            df = df.sort_index(ascending=True)
+            # Rename columns to match standard yfinance outcomes
+            df = df.rename(columns={
+                'Open': 'Open', 'High': 'High', 'Low': 'Low', 
+                'Close': 'Close', 'Volume': 'Volume'
+            })
+            return df
+    except Exception:
+        pass
+    return None
 
+@st.cache_data(ttl=900, show_spinner=False)
+def get_history(ticker: str, period="2y", interval="1d"):
+    try:
+        df = yf.download(ticker, period=period, interval=interval, auto_adjust=False, progress=False, threads=False)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        if df.empty:
+            raise ValueError("Empty dataframe returned from yfinance.")
+        return df.dropna(how="all")
+    except Exception as e:
+        # Graceful fallback to Stooq engine
+        stooq_df = get_history_stooq(ticker)
+        if stooq_df is not None and not stooq_df.empty:
+            return stooq_df
+        raise ValueError(f"No price history returned for {ticker} (tried Yahoo & Stooq). Original error: {e}")
 
 KNOWN_SECURITY_NAMES = {
     "MU": "Micron Technology, Inc.",
@@ -260,10 +263,6 @@ KNOWN_SECURITY_NAMES = {
 
 @st.cache_data(ttl=900, show_spinner=False)
 def company_name(ticker: str):
-    """Return the real security/company name, or an empty string when unavailable.
-
-    Never return the ticker as the name; doing so caused displays such as "MU MU".
-    """
     symbol = str(ticker or "").upper().strip()
     if not symbol:
         return ""
@@ -275,7 +274,6 @@ def company_name(ticker: str):
     except Exception:
         pass
 
-    # Yahoo search is often more reliable than Ticker.info for resolving names.
     try:
         search = yf.Search(symbol, max_results=8, news_count=0)
         for quote in getattr(search, "quotes", []) or []:
@@ -293,24 +291,12 @@ def company_name(ticker: str):
     # Stable fallback for frequently used symbols when Yahoo omits name metadata.
     return KNOWN_SECURITY_NAMES.get(symbol, "")
 
-
 def symbol_company(ticker: str):
     symbol = str(ticker or "").upper().strip()
     if not symbol:
         return ""
     name = company_name(symbol)
     return f"{symbol} [{name}]" if name else symbol
-
-
-@st.cache_data(ttl=900, show_spinner=False)
-def get_history(ticker: str, period="2y", interval="1d"):
-    df = yf.download(ticker, period=period, interval=interval, auto_adjust=False, progress=False, threads=False)
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    if df.empty:
-        raise ValueError(f"No price history returned for {ticker}.")
-    return df.dropna(how="all")
-
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_quarterly_eps(ticker: str):
@@ -329,7 +315,6 @@ def get_quarterly_eps(ticker: str):
                 return s[~s.index.duplicated(keep="last")].sort_index()
     return pd.Series(dtype=float)
 
-
 def eps_growth(q):
     q = q.dropna().sort_index()
     if len(q) < 8:
@@ -337,7 +322,6 @@ def eps_growth(q):
     latest = q.tail(4).sum()
     prior = q.iloc[-8:-4].sum()
     return None if latest <= 0 or prior <= 0 else (latest / prior - 1) * 100
-
 
 def valuation(ticker: str, manual_growth=None, manual_pe=None):
     info = get_info(ticker)
@@ -391,7 +375,6 @@ def valuation(ticker: str, manual_growth=None, manual_pe=None):
         "Methods": methods, "Quarterly EPS": q,
     }
 
-
 @st.cache_data(ttl=1800, show_spinner=False)
 def scan_group(tickers_tuple):
     rows = []
@@ -409,14 +392,12 @@ def scan_group(tickers_tuple):
         result["Signal"] = result["Signal"].map(normalize_signal)
     return result
 
-
 def calculate_rsi(close: pd.Series, periods=14):
     delta = close.diff()
     gain = delta.clip(lower=0).ewm(alpha=1/periods, adjust=False).mean()
     loss = (-delta.clip(upper=0)).ewm(alpha=1/periods, adjust=False).mean()
     rs = gain / loss.replace(0, np.nan)
     return 100 - (100 / (1 + rs))
-
 
 def chart_figure(ticker, v, history_months):
     months_to_period = {1: "6mo", 3: "1y", 6: "1y"}
@@ -456,7 +437,7 @@ def chart_figure(ticker, v, history_months):
             )
 
     # Mark the live/current price with a subtle light-green dotted reference line.
-    current_price = sf(v.get("Current Price"))
+    current_price = sf(v.get("Price"))
     if not current_price or current_price <= 0:
         current_price = float(df["Close"].dropna().iloc[-1])
     fig.add_hline(
@@ -469,8 +450,6 @@ def chart_figure(ticker, v, history_months):
     relative_fv = sf(v.get("Relative Fair Value"))
 
     # Keep Relative FV off the chart when it is an outlier versus Original FV.
-    # A 30% maximum difference keeps the price scale useful while preserving
-    # the underlying Relative FV calculation elsewhere in the app.
     relative_fv_for_chart = None
     if original_fv and original_fv > 0 and relative_fv and relative_fv > 0:
         relative_gap_pct = abs(relative_fv - original_fv) / original_fv
@@ -532,9 +511,6 @@ def chart_figure(ticker, v, history_months):
         pad = max((ymax - ymin) * 0.08, ymax * 0.01)
         axis_min, axis_max = ymin - pad, ymax + pad
 
-        # Keep the price scale clean when fair value is far from the market price.
-        # Plotly will show roughly five to seven major price levels rather than
-        # filling the large gap with many intermediate labels.
         span = max(axis_max - axis_min, 0.01)
         raw_step = span / 6
         magnitude = 10 ** math.floor(math.log10(raw_step))
@@ -562,7 +538,6 @@ def chart_figure(ticker, v, history_months):
     )
     return fig
 
-
 def option_delta_estimate(spot, strike, dte, iv, option_type):
     if not all([spot, strike, dte, iv]) or dte <= 0 or iv <= 0:
         return None
@@ -572,34 +547,28 @@ def option_delta_estimate(spot, strike, dte, iv, option_type):
     cdf = NormalDist().cdf(d1)
     return cdf if option_type == "calls" else cdf - 1
 
-
 @st.cache_data(ttl=300, show_spinner=False)
 def option_expirations(ticker):
     return list(yf.Ticker(ticker).options)
-
 
 @st.cache_data(ttl=300, show_spinner=False)
 def option_chain(ticker, expiration, side):
     chain = yf.Ticker(ticker).option_chain(expiration)
     return (chain.calls if side == "calls" else chain.puts).copy()
 
-
 def load_trades():
     with sqlite3.connect(DB_PATH) as con:
         return pd.read_sql_query("SELECT * FROM trades ORDER BY id DESC", con)
-
 
 def starting_cash():
     with sqlite3.connect(DB_PATH) as con:
         row = con.execute("SELECT value FROM settings WHERE key='starting_cash'").fetchone()
     return float(row[0]) if row else 100000.0
 
-
 def save_starting_cash(value):
     with sqlite3.connect(DB_PATH) as con:
         con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('starting_cash',?)", (str(value),))
         con.commit()
-
 
 def portfolio_summary(trades):
     cash = starting_cash()
@@ -663,20 +632,34 @@ def portfolio_summary(trades):
     account = cash + market_value
     return cash, market_value, account, realized, unrealized, pd.DataFrame(rows)
 
-
-
 @st.cache_data(ttl=180, show_spinner=False)
 def quick_quote(ticker: str):
     ticker = ticker.upper().strip()
-    info = get_info(ticker)
-    hist = get_history(ticker, period="5d", interval="1d")
-    closes = pd.to_numeric(hist["Close"], errors="coerce").dropna()
+    info = {}
+    try:
+        info = get_info(ticker)
+    except Exception:
+        pass
+        
+    try:
+        hist = get_history(ticker, period="5d", interval="1d")
+        closes = pd.to_numeric(hist["Close"], errors="coerce").dropna()
+    except Exception:
+        hist = pd.DataFrame()
+        closes = pd.Series(dtype=float)
+        
     price = sf(info.get("currentPrice")) or sf(info.get("regularMarketPrice")) or (sf(closes.iloc[-1]) if not closes.empty else None)
     previous = sf(info.get("previousClose")) or (sf(closes.iloc[-2]) if len(closes) > 1 else None)
+    
+    # If Yahoo is empty/rate-limited, build a fully operational mock quote from Stooq
+    if price is None and not closes.empty:
+        price = float(closes.iloc[-1])
+        previous = float(closes.iloc[-2]) if len(closes) > 1 else price
+        
     change = (price - previous) if price is not None and previous is not None else None
     change_pct = (change / previous * 100) if change is not None and previous else None
-    day_low = sf(info.get("dayLow")) or sf(info.get("regularMarketDayLow"))
-    day_high = sf(info.get("dayHigh")) or sf(info.get("regularMarketDayHigh"))
+    day_low = sf(info.get("dayLow")) or sf(info.get("regularMarketDayLow")) or (sf(hist["Low"].iloc[-1]) if not hist.empty else None)
+    day_high = sf(info.get("dayHigh")) or sf(info.get("regularMarketDayHigh")) or (sf(hist["High"].iloc[-1]) if not hist.empty else None)
     earnings_ts = info.get("earningsTimestamp") or info.get("earningsTimestampStart")
     earnings_date = None
     if earnings_ts:
@@ -684,19 +667,20 @@ def quick_quote(ticker: str):
             earnings_date = datetime.fromtimestamp(int(earnings_ts)).strftime("%b %d, %Y")
         except Exception:
             earnings_date = None
+            
     return {
         "ticker": ticker, "name": company_name(ticker),
-        "exchange": info.get("fullExchangeName") or info.get("exchange") or "",
+        "exchange": info.get("fullExchangeName") or info.get("exchange") or "US Market",
         "currency": info.get("currency") or "USD",
         "price": price, "change": change, "change_pct": change_pct,
         "previous_close": previous,
-        "open": sf(info.get("open")) or sf(info.get("regularMarketOpen")),
+        "open": sf(info.get("open")) or sf(info.get("regularMarketOpen")) or (sf(hist["Open"].iloc[-1]) if not hist.empty else None),
         "bid": sf(info.get("bid")), "bid_size": sf(info.get("bidSize")),
         "ask": sf(info.get("ask")), "ask_size": sf(info.get("askSize")),
         "day_low": day_low, "day_high": day_high,
         "week52_low": sf(info.get("fiftyTwoWeekLow")),
         "week52_high": sf(info.get("fiftyTwoWeekHigh")),
-        "volume": sf(info.get("volume")) or sf(info.get("regularMarketVolume")),
+        "volume": sf(info.get("volume")) or sf(info.get("regularMarketVolume")) or (sf(hist["Volume"].iloc[-1]) if not hist.empty else None),
         "avg_volume": sf(info.get("averageVolume")) or sf(info.get("averageDailyVolume3Month")),
         "market_cap": sf(info.get("marketCap")), "beta": sf(info.get("beta")),
         "pe": sf(info.get("trailingPE")), "eps": sf(info.get("trailingEps")),
@@ -704,7 +688,6 @@ def quick_quote(ticker: str):
         "dividend_rate": sf(info.get("dividendRate")),
         "dividend_yield": (sf(info.get("dividendYield")) or 0) * 100,
     }
-
 
 @st.cache_data(ttl=300, show_spinner=False)
 def most_active_quotes():
@@ -726,10 +709,8 @@ def most_active_quotes():
     rows.sort(key=lambda r: r.get("volume") or 0, reverse=True)
     return rows[:10]
 
-
 def money(value):
     return "N/A" if value is None else f"${value:,.2f}"
-
 
 def compact_number(value):
     if value is None:
@@ -834,6 +815,7 @@ def render_homepage():
                 """,
                 unsafe_allow_html=True,
             )
+            
             left_stats, right_stats = st.columns(2, gap="large")
             with left_stats:
                 left_rows = [
@@ -848,10 +830,9 @@ def render_homepage():
                     st.markdown(
                         f"""
                         <div style="display:flex;justify-content:space-between;align-items:center;
-                                    margin:.35rem 0;color:#000000 !important;
-                                    font-weight:900 !important;">
-                            <span style="color:#000000 !important;font-weight:900 !important;">{label}</span>
-                            <span style="color:#000000 !important;font-weight:900 !important;">{value}</span>
+                                    margin:.35rem 0; font-weight:700;">
+                            <span>{label}</span>
+                            <span>{value}</span>
                         </div>
                         <hr style="margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)">
                         """,
@@ -873,10 +854,9 @@ def render_homepage():
                     st.markdown(
                         f"""
                         <div style="display:flex;justify-content:space-between;align-items:center;
-                                    margin:.35rem 0;color:#000000 !important;
-                                    font-weight:900 !important;">
-                            <span style="color:#000000 !important;font-weight:900 !important;">{label}</span>
-                            <span style="color:#000000 !important;font-weight:900 !important;">{value}</span>
+                                    margin:.35rem 0; font-weight:700;">
+                            <span>{label}</span>
+                            <span>{value}</span>
                         </div>
                         <hr style="margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)">
                         """,
@@ -890,7 +870,7 @@ def render_homepage():
         except Exception as exc:
             st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
 
-    st.markdown('<div class="section-title">Top 10 most actively traded</div><div class="section-copy">Ranked by reported trading volume. Click a symbol to update the instant quote.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">TOP 10 MOST ACTIVELY TRADED</div><div class="section-copy">Ranked by reported trading volume. Click a symbol to update the instant quote.</div>', unsafe_allow_html=True)
     try:
         active = most_active_quotes()
         for rank, row in enumerate(active, 1):
@@ -906,15 +886,12 @@ def render_homepage():
     except Exception as exc:
         st.info(f"Most-active data is temporarily unavailable: {exc}")
 
-
 init_db()
 for key, value in {
     "selected_ticker": "", "options_ticker": "", "manual_growth": "", "manual_pe": ""
 }.items():
     st.session_state.setdefault(key, value)
 
-# Apply a watchlist selection before Streamlit creates ticker input widgets.
-# This avoids changing a widget-backed session key after the widget exists.
 if "pending_watchlist_ticker" in st.session_state:
     pending_ticker = str(st.session_state.pop("pending_watchlist_ticker")).upper().strip()
     if pending_ticker:
@@ -925,12 +902,8 @@ if "pending_watchlist_ticker" in st.session_state:
 st.session_state.setdefault("active_section", "Home")
 
 section_names = [
-    ("⌂", "Home"),
-    ("📈", "Price vs EPS"),
-    ("📋", "Watchlists"),
-    ("💼", "Paper Trading"),
-    ("🧪", "Backtesting"),
-    ("🔎", "Options Finder"),
+    ("⌂", "Home"), ("📈", "Price vs EPS"), ("📋", "Watchlists"),
+    ("💼", "Paper Trading"), ("🧪", "Backtesting"), ("🔎", "Options Finder"),
 ]
 active_section = st.session_state.active_section
 if active_section != "Home":
@@ -944,8 +917,6 @@ pe_text = st.session_state.manual_pe
 
 if active_section == "Home":
     render_homepage()
-else:
-    st.caption("Yahoo Finance data is unofficial and may be delayed or rate-limited.")
 
 if active_section == "Price vs EPS":
     st.subheader("Price vs EPS Analysis")
@@ -1050,12 +1021,9 @@ if active_section == "Watchlists":
     watch_df = watch_df.rename(columns={"Dividend Yield %": "Div.Yield %"})
     if "Signal" in watch_df.columns:
         watch_df["Signal"] = watch_df["Signal"].map(normalize_signal)
-    # Show the strongest-ranked stocks first while keeping Streamlit's
-    # interactive header sorting available to the user.
     if "Score" in watch_df.columns:
         watch_df = watch_df.sort_values(by="Score", ascending=False, na_position="last").reset_index(drop=True)
 
-    # Keep Score immediately after Price for every watchlist category.
     preferred_order = ["Ticker", "Company Name"]
     if "% of Total Portfolio" in watch_df.columns:
         preferred_order.append("% of Total Portfolio")
@@ -1256,246 +1224,4 @@ if active_section == "Paper Trading":
                         (trade_date, action, ticker, shares, price, asset_type, multiplier, description)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
-                            close_date.isoformat(),
-                            "SELL",
-                            str(selected_position["Symbol"]),
-                            float(close_quantity),
-                            float(close_price),
-                            str(selected_position["Asset Type"]),
-                            float(selected_position["Multiplier"]),
-                            str(selected_position.get("Description", "") or ""),
-                        ),
-                    )
-                    con.commit()
-                st.success("Position closed." if close_quantity >= float(selected_position["Quantity"]) else "Position partially closed.")
-                st.rerun()
-
-    st.subheader("Trade history")
-    if trades.empty:
-        st.info("No paper trades yet.")
-    else:
-        display_trades = trades.rename(columns={"shares": "quantity"}).copy()
-        display_trades.insert(4, "company_name", display_trades["ticker"].map(company_name))
-        display_trades.insert(4, "symbol_company", display_trades["ticker"].map(symbol_company))
-        edited = st.data_editor(
-            display_trades,
-            use_container_width=True,
-            hide_index=True,
-            disabled=["id", "symbol_company", "company_name"],
-            num_rows="fixed",
-            key="trade_editor",
-            column_config={
-                "symbol_company": st.column_config.TextColumn("Symbol Company"),
-                "ticker": st.column_config.TextColumn("Ticker (data key)"),
-                "company_name": st.column_config.TextColumn("Company Name"),
-                "price": st.column_config.NumberColumn("Price", format="$%.2f"),
-                "multiplier": st.column_config.NumberColumn("Multiplier", format="%.2f"),
-            },
-        )
-        trade_options = {
-            f"ID {int(r.id)} | {str(r.action).upper()} {float(r.quantity):g} {symbol_company(r.ticker)} @ ${float(r.price):,.2f}": int(r.id)
-            for _, r in display_trades.iterrows()
-        }
-        selected_trade_label = st.selectbox("Selected trade", list(trade_options.keys()), key="selected_trade_action")
-        selected_trade_id = trade_options[selected_trade_label]
-
-        col1, col2, col3, col4 = st.columns(4)
-        if col1.button("Save Changes", use_container_width=True):
-            with sqlite3.connect(DB_PATH) as con:
-                con.execute("DELETE FROM trades")
-                for _, r in edited.iterrows():
-                    con.execute(
-                        """INSERT INTO trades
-                        (id, trade_date, action, ticker, shares, price, asset_type, multiplier, description)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (
-                            int(r.id),
-                            str(r.trade_date),
-                            str(r.action).upper(),
-                            str(r.ticker).upper(),
-                            float(r.quantity),
-                            float(r.price),
-                            str(r.asset_type),
-                            float(r.multiplier),
-                            str(r.description or ""),
-                        ),
-                    )
-                con.commit()
-            st.success("Trades updated.")
-            st.rerun()
-
-        if col2.button("Duplicate Trade", use_container_width=True):
-            source = trades.loc[trades["id"] == selected_trade_id].iloc[0]
-            with sqlite3.connect(DB_PATH) as con:
-                con.execute(
-                    """INSERT INTO trades
-                    (trade_date, action, ticker, shares, price, asset_type, multiplier, description)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        str(source.trade_date), str(source.action), str(source.ticker), float(source.shares),
-                        float(source.price), str(source.asset_type), float(source.multiplier),
-                        str(source.description or ""),
-                    ),
-                )
-                con.commit()
-            st.success("Trade duplicated.")
-            st.rerun()
-
-        if col3.button("Delete Trade", use_container_width=True):
-            with sqlite3.connect(DB_PATH) as con:
-                con.execute("DELETE FROM trades WHERE id=?", (selected_trade_id,))
-                con.commit()
-            st.success("Trade deleted.")
-            st.rerun()
-
-        confirm_clear = st.checkbox("Confirm clear all", key="confirm_clear_all_trades")
-        if col4.button("Clear All Trades", use_container_width=True, disabled=not confirm_clear):
-            with sqlite3.connect(DB_PATH) as con:
-                con.execute("DELETE FROM trades")
-                con.commit()
-            st.success("All trades cleared.")
-            st.rerun()
-
-
-if active_section == "Backtesting":
-    st.subheader("Single-stock dividend-reinvestment backtest")
-    b1, b2, b3, b4 = st.columns(4)
-    bticker = b1.text_input("Ticker", value=st.session_state.selected_ticker, key="bt_ticker").upper()
-    amount = b2.number_input("Initial investment", min_value=1.0, value=1000.0, step=100.0)
-    years = int(b3.number_input("Years", min_value=1, max_value=100, value=5, step=1))
-    reinvest = b4.checkbox("Reinvest dividends", value=True)
-    if bticker:
-        st.caption(symbol_company(bticker))
-    st.caption(f"Backtest period: {years} year{'s' if years != 1 else ''}")
-
-    if st.button("Run Backtest"):
-        try:
-            end_date = pd.Timestamp.today().normalize()
-            start_date = end_date - pd.DateOffset(years=years)
-            hist = yf.Ticker(bticker).history(
-                start=start_date.strftime("%Y-%m-%d"),
-                end=(end_date + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
-                auto_adjust=False,
-                actions=True,
-            )
-            if hist.empty:
-                raise ValueError("No historical data returned for the selected period.")
-            hist = hist.dropna(subset=["Close"])
-            if hist.empty or float(hist["Close"].iloc[0]) <= 0:
-                raise ValueError("No valid closing-price data returned for the selected period.")
-
-            shares_bt = amount / float(hist["Close"].iloc[0])
-            cash_div = 0.0
-            values = []
-            for idx, row in hist.iterrows():
-                dividend = sf(row.get("Dividends")) or 0.0
-                if dividend:
-                    received = shares_bt * dividend
-                    if reinvest and row["Close"] > 0:
-                        shares_bt += received / row["Close"]
-                    else:
-                        cash_div += received
-                values.append(shares_bt * row["Close"] + cash_div)
-
-            ending = values[-1]
-            total_return = (ending / amount - 1) * 100
-            elapsed_years = max((hist.index[-1] - hist.index[0]).days / 365.2425, 1 / 365.2425)
-            cagr = (ending / amount) ** (1 / elapsed_years) - 1
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Ending Value", f"${ending:,.2f}")
-            m2.metric("Total Return", f"{total_return:,.2f}%")
-            m3.metric("CAGR", f"{cagr*100:,.2f}%")
-            st.caption(
-                f"Data used: {hist.index[0].date():%b %d, %Y} through "
-                f"{hist.index[-1].date():%b %d, %Y} ({elapsed_years:.2f} years)."
-            )
-            fig_bt = go.Figure(go.Scatter(x=hist.index, y=values, name="Portfolio Value"))
-            fig_bt.update_layout(title=f"{symbol_company(bticker)} Backtest", height=500, yaxis_title="Value ($)", hovermode="x unified")
-            st.plotly_chart(fig_bt, use_container_width=True)
-        except Exception as exc:
-            st.error(str(exc))
-
-if active_section == "Options Finder":
-    st.subheader("Options Finder")
-    o1, o2, o3, o4, o5 = st.columns(5)
-    oticker = o1.text_input("Ticker", key="options_ticker").upper().strip()
-    side_label = o2.selectbox("Contracts", ["Puts", "Calls"])
-    min_ann = o3.number_input("Min annual return %", value=24.0, step=1.0)
-    max_ann = o4.number_input("Max annual return %", value=30.0, step=1.0)
-    min_volume = o5.number_input("Minimum volume", value=25, min_value=0, step=1)
-    d1, d2, d3 = st.columns(3)
-    min_dte = d1.number_input("Min DTE", value=30, min_value=0, step=1)
-    max_dte = d2.number_input("Max DTE", value=45, min_value=1, step=1)
-    max_delta = d3.number_input("Maximum absolute Delta", value=0.18, min_value=0.01, max_value=1.0, step=0.01)
-
-    action_col, price_col, spacer_col = st.columns([1.1, 1.25, 4.65])
-    find_options = action_col.button("Find Options", type="primary", use_container_width=True)
-
-    current_option_price = None
-    if oticker:
-        st.caption(symbol_company(oticker))
-        try:
-            current_option_price = quick_quote(oticker)["price"]
-        except Exception:
-            current_option_price = None
-    price_col.metric(
-        "Current Stock Price",
-        f"${current_option_price:,.2f}" if current_option_price is not None else "—",
-    )
-
-    if find_options:
-        try:
-            spot = current_option_price or valuation(oticker)["Price"]
-            expirations = option_expirations(oticker)
-            rows = []
-            today = date.today()
-            side = side_label.lower()
-            for exp in expirations:
-                exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
-                dte = (exp_date - today).days
-                if dte < min_dte or dte > max_dte:
-                    continue
-                chain = option_chain(oticker, exp, side)
-                for _, r in chain.iterrows():
-                    bid, ask = sf(r.get("bid")), sf(r.get("ask"))
-                    strike = sf(r.get("strike"))
-                    volume = sf(r.get("volume")) or 0
-                    iv = sf(r.get("impliedVolatility"))
-                    if bid is None or ask is None or strike is None or ask < bid or volume < min_volume:
-                        continue
-                    mid_price = (bid + ask) / 2
-                    if mid_price <= 0:
-                        continue
-                    delta = option_delta_estimate(spot, strike, dte, iv, side)
-                    if delta is not None and abs(delta) > max_delta:
-                        continue
-                    collateral = strike if side == "puts" else spot
-                    ann_return = (mid_price / collateral) * (365 / dte) * 100 if collateral and dte else None
-                    if ann_return is None or not (min_ann <= ann_return <= max_ann):
-                        continue
-                    breakeven = strike - mid_price if side == "puts" else strike + mid_price
-                    rows.append({
-                        "Ticker": oticker, "Company Name": company_name(oticker),
-                        "Expiration": exp, "DTE": dte, "Strike": strike,
-                        "Bid": bid, "Ask": ask, "Mid": mid_price, "Delta": delta,
-                        "IV %": iv * 100 if iv else None, "Volume": int(volume),
-                        "Open Interest": int(sf(r.get("openInterest")) or 0),
-                        "Ann. Return %": ann_return, "Break-even": breakeven,
-                        "Contract": r.get("contractSymbol"),
-                    })
-            results = pd.DataFrame(rows).sort_values("Ann. Return %", ascending=False) if rows else pd.DataFrame()
-            if results.empty:
-                st.warning("No contracts matched the current filters.")
-            else:
-                st.dataframe(results, use_container_width=True, hide_index=True, column_config={
-                    "Strike": st.column_config.NumberColumn(format="$%.2f"), "Bid": st.column_config.NumberColumn(format="$%.2f"),
-                    "Ask": st.column_config.NumberColumn(format="$%.2f"), "Mid": st.column_config.NumberColumn(format="$%.2f"),
-                    "Delta": st.column_config.NumberColumn(format="%.3f"), "IV %": st.column_config.NumberColumn(format="%.2f%%"),
-                    "Ann. Return %": st.column_config.NumberColumn(format="%.2f%%"), "Break-even": st.column_config.NumberColumn(format="$%.2f")
-                })
-                st.download_button("Download CSV", results.to_csv(index=False), file_name=f"{oticker}_options.csv", mime="text/csv")
-        except Exception as exc:
-            st.error(f"Options search failed: {exc}")
-
-st.divider()
-st.caption("Educational use only. This application does not provide investment advice or place brokerage orders.")
+                            close
