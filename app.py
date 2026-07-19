@@ -827,12 +827,25 @@ def render_homepage():
             change_text = "N/A" if q["change"] is None else f'{q["change"]:+.2f}'
             change_pct_text = "N/A" if q["change_pct"] is None else f'{q["change_pct"]:+.2f}%'
             exchange_line = " • ".join(x for x in [q.get("exchange"), q.get("currency")] if x)
+            header_col, button_col = st.columns([5, 2], vertical_alignment="center")
+            with header_col:
+                st.markdown(
+                    f"""
+                    <div style="font-size:1.55rem;font-weight:800;letter-spacing:-.02em">{symbol_company(q['ticker'])}</div>
+                    <div style="opacity:.65;font-size:.84rem;margin-top:2px">{exchange_line}</div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            with button_col:
+                if st.button(f'Analyze {q["ticker"]} in Full Dashboard →', type="primary", use_container_width=True, key="home_analyze_quote"):
+                    st.session_state.selected_ticker = q["ticker"]
+                    st.session_state.options_ticker = q["ticker"]
+                    st.session_state.active_section = "Price vs EPS"
+                    st.rerun()
             st.markdown(
                 f"""
                 <div style="padding:22px 24px;border:1px solid rgba(128,128,128,.24);border-radius:16px;background:rgba(128,128,128,.035);margin:8px 0 18px">
-                  <div style="font-size:1.55rem;font-weight:800;letter-spacing:-.02em">{symbol_company(q['ticker'])}</div>
-                  <div style="opacity:.65;font-size:.84rem;margin-top:2px">{exchange_line}</div>
-                  <div style="display:flex;align-items:baseline;gap:14px;margin-top:14px;flex-wrap:wrap">
+                  <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
                     <span style="font-size:2.75rem;font-weight:850;letter-spacing:-.045em">{money(q['price'])}</span>
                     <span style="font-size:1.08rem;font-weight:750">{change_text} ({change_pct_text})</span>
                   </div>
@@ -888,11 +901,6 @@ def render_homepage():
                         """,
                         unsafe_allow_html=True,
                     )
-            if st.button(f'Analyze {q["ticker"]} in Full Dashboard →', type="primary", key="home_analyze_quote"):
-                st.session_state.selected_ticker = q["ticker"]
-                st.session_state.options_ticker = q["ticker"]
-                st.session_state.active_section = "Price vs EPS"
-                st.rerun()
         except Exception as exc:
             st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
 
