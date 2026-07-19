@@ -30,18 +30,47 @@ import uuid as _uuid
 _scroll_nonce = _uuid.uuid4().hex
 components.html(
     f"""<script>
-    const scrollTop = () => {{
+    (function() {{
+        const doc = window.parent.document;
+        const win = window.parent;
+        const selectors = [
+            '[data-testid="stAppViewContainer"]',
+            '[data-testid="stMain"]',
+            '[data-testid="stAppViewBlockContainer"]',
+            'section.main',
+            '.main',
+        ];
+        const scrollTop = () => {{
+            try {{
+                win.scrollTo({{top: 0, left: 0, behavior: 'instant'}});
+                doc.documentElement.scrollTop = 0;
+                doc.body.scrollTop = 0;
+                selectors.forEach((sel) => {{
+                    const el = doc.querySelector(sel);
+                    if (el) el.scrollTop = 0;
+                }});
+            }} catch (e) {{}}
+        }};
+
+        scrollTop();
+
+        // Keep re-applying for ~2s in case late content (e.g. live quotes)
+        // finishes loading and shifts page height after the initial paint.
+        let ticks = 0;
+        const interval = win.setInterval(() => {{
+            scrollTop();
+            ticks += 1;
+            if (ticks > 20) win.clearInterval(interval);
+        }}, 100);
+
+        // Also react immediately to any DOM changes (new content inserted)
+        // for the first couple seconds after this rerun.
         try {{
-            window.parent.scrollTo({{top: 0, left: 0, behavior: 'instant'}});
-            const main = window.parent.document.querySelector('section.main');
-            if (main) main.scrollTo({{top: 0, left: 0, behavior: 'instant'}});
+            const observer = new MutationObserver(() => scrollTop());
+            observer.observe(doc.body, {{childList: true, subtree: true}});
+            win.setTimeout(() => observer.disconnect(), 2000);
         }} catch (e) {{}}
-    }};
-    scrollTop();
-    setTimeout(scrollTop, 50);
-    setTimeout(scrollTop, 250);
-    setTimeout(scrollTop, 500);
-    setTimeout(scrollTop, 900);
+    }})();
     </script>
     <!-- nonce: {_scroll_nonce} -->""",
     height=0,
