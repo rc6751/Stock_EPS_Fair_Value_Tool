@@ -744,9 +744,9 @@ def render_navigation(key_prefix="nav"):
                 st.rerun()
 
 def render_homepage():
-    st.markdown('<div class="section-title">Major markets</div><div class="section-copy"></div>', unsafe_allow_html=True)
-    market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
-    market_cols = st.columns(6)
+    st.markdown('<div class="section-title">MAJOR MARKETS</div><div class="section-copy"></div>', unsafe_allow_html=True)
+    market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("VIX","^VIX"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
+    market_cols = st.columns(7)
     for col, (label, symbol) in zip(market_cols, market_assets):
         with col:
             try:
@@ -760,8 +760,8 @@ def render_homepage():
     <section class="hero">
       <div class="hero-copy">
         <span class="eyebrow">Research • Valuation • Technicals</span>
-        <h1>STOCK FAIR VALUE TOOL</h1>
-        <p>Check stocks, Bitcoin, major indexes and oil, then move directly into earnings-based valuation and technical analysis.</p>
+        <h1>STOCK ANALYZER TOOL</h1>
+        <p>Earnings-based valuation and technical analysis.</p>
       </div>
       <div class="market-card">
         <div class="ticker"><div><div style="opacity:.62;font-size:.78rem">MARKET INTELLIGENCE</div><b>Quote → Valuation → Decision</b></div></div>
