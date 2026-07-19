@@ -421,7 +421,7 @@ def valuation(ticker: str, manual_growth=None, manual_pe=None):
     signal = "BUY" if score >= 65 else "HOLD" if score >= 45 else "SELL"
 
     return {
-        "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Original Fair Value": original,
+        "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Fair Value": original,
         "Score": score, "Signal": normalize_signal(signal),
         "P/E": pe, "Trailing EPS": trailing, "Forward EPS": forward,
         "EPS Growth %": growth, "Annual Dividend": annual_div,
@@ -438,7 +438,7 @@ def scan_group(tickers_tuple):
         try:
             v = valuation(ticker)
             rows.append({k: v[k] for k in [
-                "Ticker", "Company Name", "Price", "Original Fair Value", "Score", "Signal",
+                "Ticker", "Company Name", "Price", "Fair Value", "Score", "Signal",
                 "P/E", "Forward EPS", "Dividend Yield %", "52W Low", "52W High"
             ]})
         except Exception:
@@ -504,11 +504,11 @@ def chart_figure(ticker, v, history_months):
         annotation_position="right", row=1, col=1
     )
 
-    original_fv = sf(v.get("Original Fair Value"))
+    original_fv = sf(v.get("Fair Value"))
     if original_fv:
         fig.add_hline(
             y=original_fv, line_dash="dash", line_width=3,
-            annotation_text=f"Original FV ${original_fv:,.2f}",
+            annotation_text=f"Fair Value ${original_fv:,.2f}",
             annotation_position="right", row=1, col=1
         )
 
@@ -1016,7 +1016,7 @@ if active_section == "Price vs EPS":
                 v = valuation(ticker, mg, mpe)
             st.markdown(f"### {symbol_company(v['Ticker'])}")
             metrics = [
-                ("Price", v["Price"], "$"), ("Original FV", v["Original Fair Value"], "$"),
+                ("Price", v["Price"], "$"), ("Fair Value", v["Fair Value"], "$"),
                 ("Score", v["Score"], ""), ("Signal", normalize_signal(v["Signal"]), ""),
                 ("Dividend Yield", v["Dividend Yield %"], "%"),
             ]
@@ -1133,7 +1133,7 @@ if active_section == "Watchlists":
         if "% of Total Portfolio" in watch_df.columns:
             preferred_order.append("% of Total Portfolio")
         preferred_order.extend([
-            "Price", "Score", "Original Fair Value", "Signal",
+            "Price", "Score", "Fair Value", "Signal",
             "P/E", "Forward EPS", "Div.Yield %", "52W Low", "52W High"
         ])
         remaining_columns = [col for col in watch_df.columns if col not in preferred_order]
@@ -1153,7 +1153,7 @@ if active_section == "Watchlists":
                 "Symbol Company": st.column_config.TextColumn(width=260),
                 "Price": st.column_config.NumberColumn(format="$%.2f", width=105),
                 "Score": st.column_config.NumberColumn(width=85),
-                "Original Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
+                "Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
                 "Signal": st.column_config.TextColumn(width=115),
                 "P/E": st.column_config.NumberColumn(format="%.2f", width=90),
                 "Forward EPS": st.column_config.NumberColumn(format="%.2f", width=125),
