@@ -787,142 +787,139 @@ def render_navigation(key_prefix="nav"):
                 st.rerun()
 
 def render_homepage():
-    st.markdown('<div class="section-title">MAJOR MARKETS</div><div class="section-copy"></div>', unsafe_allow_html=True)
-    market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
-    market_cols = st.columns(6)
-    for col, (label, symbol) in zip(market_cols, market_assets):
-        with col:
-            try:
-                mq = quick_quote(symbol)
-                change = mq["change"]
-                change_pct = mq.get("change_pct")
-                name_color = "#16a34a" if change is not None and change > 0 else "#dc2626" if change is not None and change < 0 else "#6b7280"
-                delta_text = "N/A" if change is None else f"{change:+.2f}" + (f" ({change_pct:+.2f}%)" if change_pct is not None else "")
-                st.markdown(
-                    f"""
-                    <div style="padding:.55rem .65rem;border:1px solid rgba(128,128,128,.20);border-radius:12px;min-height:108px">
-                      <div style="font-size:.78rem;font-weight:800;color:{name_color};line-height:1.15;min-height:2rem">{label.upper()}</div>
-                      <div style="font-size:1.12rem;font-weight:800;margin-top:.2rem">{money(mq['price'])}</div>
-                      <div style="font-size:.76rem;margin-top:.15rem;color:{name_color};font-weight:700">{delta_text}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-            except Exception:
-                st.markdown(
-                    f"""
-                    <div style="padding:.55rem .65rem;border:1px solid rgba(128,128,128,.20);border-radius:12px;min-height:108px">
-                      <div style="font-size:.78rem;font-weight:800;color:#6b7280;line-height:1.15;min-height:2rem">{label.upper()}</div>
-                      <div style="font-size:.95rem;font-weight:700;margin-top:.35rem">Unavailable</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
+    """Trial dashboard inspired by the supplied professional dark-theme mockup."""
     st.markdown("""
-    <section class="hero">
-      <div class="hero-copy">
-        <span class="eyebrow">Research • Valuation • Technicals</span>
-        <h1>STOCK FAIR VALUE TOOL</h1>
-        <p>Check stocks, Bitcoin, major indexes and oil, then move directly into earnings-based valuation and technical analysis.</p>
-      </div>
-      <div class="market-card">
-        <div class="ticker"><div><div style="opacity:.62;font-size:.78rem">MARKET INTELLIGENCE</div><b>Quote → Valuation → Decision</b></div></div>
-        <svg class="spark" viewBox="0 0 340 160" preserveAspectRatio="none" aria-label="Illustrative market chart">
-          <defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#22d3ee" stop-opacity=".42"/><stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/></linearGradient></defs>
-          <path d="M0 130 C28 124,42 132,66 111 S105 117,128 89 S171 103,197 68 S236 79,260 47 S302 53,340 20 L340 160 L0 160 Z" fill="url(#area)"/>
-          <path d="M0 130 C28 124,42 132,66 111 S105 117,128 89 S171 103,197 68 S236 79,260 47 S302 53,340 20" fill="none" stroke="#67e8f9" stroke-width="4" stroke-linecap="round"/>
-        </svg>
-        <div class="statrow"><div class="stat">LIVE QUOTES<b>Stocks</b></div><div class="stat">MARKETS<b>Indexes</b></div><div class="stat">ALTERNATIVES<b>BTC + Oil</b></div></div>
-      </div>
-    </section>
+    <style>
+    .trial-shell {background:linear-gradient(180deg,#061426 0%,#071a31 100%);padding:1rem;border-radius:20px;color:#f8fafc;border:1px solid rgba(96,165,250,.22)}
+    .trial-hero {position:relative;overflow:hidden;min-height:280px;border-radius:18px;padding:30px 34px;background:radial-gradient(circle at 90% 15%,rgba(37,99,235,.24),transparent 34%),linear-gradient(135deg,#071426,#08244a);border:1px solid rgba(96,165,250,.25);margin-bottom:14px}
+    .trial-badge {display:inline-block;background:#0f4fb7;border:1px solid rgba(147,197,253,.35);padding:7px 13px;border-radius:999px;font-size:.78rem;font-weight:800}
+    .trial-title {font-size:3.05rem;line-height:1.08;font-weight:900;letter-spacing:-.045em;margin:18px 0 12px;max-width:620px}
+    .trial-sub {font-size:1.03rem;color:#cbd5e1;max-width:650px;line-height:1.55}
+    .trial-quote {position:absolute;right:22px;top:22px;width:350px;background:rgba(4,18,41,.86);border:1px solid rgba(96,165,250,.28);border-radius:14px;padding:18px 20px;box-shadow:0 18px 45px rgba(0,0,0,.28)}
+    .trial-quote-head {display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.trial-symbol{font-size:1.35rem;font-weight:900}.trial-price{font-size:1.55rem;font-weight:900;color:#22c55e;text-align:right}.trial-muted{color:#a8b5c9;font-size:.84rem}.trial-gain{color:#22c55e;font-weight:800}
+    .trial-spark {width:100%;height:92px;margin:8px 0 3px}.trial-quote-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;border-top:1px solid rgba(148,163,184,.25);padding-top:10px}.trial-qstat{font-size:.72rem;color:#a8b5c9}.trial-qstat b{display:block;color:#fff;font-size:.86rem;margin-top:2px}
+    .trial-kpis {display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:12px 0}.trial-kpi{background:linear-gradient(145deg,#0a1a31,#0c2546);border:1px solid rgba(96,165,250,.26);border-radius:12px;padding:16px 12px;text-align:center;min-height:112px}.trial-kpi-label{font-size:.82rem;color:#d2d9e5}.trial-kpi-value{font-size:1.62rem;font-weight:900;margin:7px 0 3px}.trial-kpi-note{font-size:.75rem;color:#9eacc0}.trial-positive{color:#22c55e}.trial-warning{color:#fbbf24}
+    .trial-panel {background:linear-gradient(145deg,#091a31,#0b2545);border:1px solid rgba(96,165,250,.24);border-radius:14px;padding:18px;min-height:330px}.trial-panel-title{font-size:1rem;font-weight:850;margin-bottom:9px}.trial-rating{font-size:2rem;font-weight:900;color:#22c55e;margin-bottom:3px}.trial-list-row{display:flex;justify-content:space-between;padding:7px 9px;border-bottom:1px solid rgba(148,163,184,.15);font-size:.8rem}.trial-list-row span:last-child{color:#22c55e}
+    .trial-footer-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;background:linear-gradient(145deg,#091a31,#0b2545);border:1px solid rgba(96,165,250,.24);border-radius:14px;padding:22px;margin-top:14px}.trial-feature{display:flex;gap:12px}.trial-feature-icon{font-size:1.7rem}.trial-feature b{display:block;margin-bottom:5px}.trial-feature span{color:#a8b5c9;font-size:.82rem;line-height:1.45}
+    @media(max-width:1200px){.trial-quote{position:relative;right:auto;top:auto;width:auto;margin-top:24px}.trial-title{font-size:2.35rem}.trial-kpis{grid-template-columns:repeat(3,1fr)}}
+    @media(max-width:760px){.trial-kpis{grid-template-columns:repeat(2,1fr)}.trial-footer-grid{grid-template-columns:1fr 1fr}.trial-hero{padding:22px}.trial-title{font-size:2rem}}
+    </style>
     """, unsafe_allow_html=True)
 
-    render_navigation("home_nav")
+    default_symbol = st.session_state.get("home_quote_ticker") or st.session_state.get("selected_ticker") or "AAPL"
+    top_a, top_b = st.columns([5, 1])
+    with top_a:
+        dashboard_symbol = st.text_input(
+            "Dashboard stock symbol",
+            value=default_symbol,
+            placeholder="AAPL",
+            label_visibility="collapsed",
+            key="trial_dashboard_symbol",
+        ).upper().strip()
+    with top_b:
+        refresh_dashboard = st.button("Load Dashboard", type="primary", use_container_width=True, key="trial_load_dashboard")
+    if refresh_dashboard and dashboard_symbol:
+        st.session_state.home_quote_ticker = dashboard_symbol
+        st.rerun()
 
-    st.markdown('<div class="section-title">Instant market quote</div><div class="section-copy">Enter a stock symbol for a Yahoo Finance-style snapshot, then open the complete analysis.</div>', unsafe_allow_html=True)
-    q1, q2 = st.columns([5,1])
-    with q1:
-        home_ticker = st.text_input("Stock symbol", value=st.session_state.get("home_quote_ticker", ""), label_visibility="collapsed", placeholder="Enter ticker — AAPL, MSFT, KO...").upper().strip()
-    with q2:
-        get_quote = st.button("Get Quote", type="primary", use_container_width=True, key="home_get_quote")
-    if get_quote and home_ticker:
-        st.session_state.home_quote_ticker = home_ticker
-    quote_ticker = st.session_state.get("home_quote_ticker", "")
-    if quote_ticker:
-        try:
-            q = quick_quote(quote_ticker)
-            change_text = "N/A" if q["change"] is None else f'{q["change"]:+.2f}'
-            change_pct_text = "N/A" if q["change_pct"] is None else f'{q["change_pct"]:+.2f}%'
-            exchange_line = " • ".join(x for x in [q.get("exchange"), q.get("currency")] if x)
-            st.markdown(
-                f"""
-                <div style="padding:22px 24px;border:1px solid rgba(128,128,128,.24);border-radius:16px;background:rgba(128,128,128,.035);margin:8px 0 18px">
-                  <div style="font-size:1.55rem;font-weight:800;letter-spacing:-.02em">{symbol_company(q['ticker'])}</div>
-                  <div style="opacity:.65;font-size:.84rem;margin-top:2px">{exchange_line}</div>
-                  <div style="display:flex;align-items:baseline;gap:14px;margin-top:14px;flex-wrap:wrap">
-                    <span style="font-size:2.75rem;font-weight:850;letter-spacing:-.045em">{money(q['price'])}</span>
-                    <span style="font-size:1.08rem;font-weight:750">{change_text} ({change_pct_text})</span>
-                  </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
+    symbol = (st.session_state.get("home_quote_ticker") or dashboard_symbol or "AAPL").upper().strip()
+    try:
+        q = quick_quote(symbol)
+        v = valuation(symbol)
+        history = get_history(symbol, period="1y", interval="1d")
+        close = pd.to_numeric(history["Close"], errors="coerce").dropna()
+        price = q.get("price") or v.get("Price")
+        fair_value = v.get("Original Fair Value")
+        margin = ((fair_value - price) / fair_value * 100) if fair_value and price else None
+        rating = normalize_signal(v.get("Signal") or "N/A")
+        rating_color = "#22c55e" if rating == "BUY" else "#fbbf24" if rating == "HOLD" else "#ef4444"
+        change = q.get("change")
+        change_pct = q.get("change_pct")
+        change_text = "N/A" if change is None else f"{change:+.2f} ({change_pct:+.2f}%)" if change_pct is not None else f"{change:+.2f}"
+        company = q.get("name") or v.get("Company Name") or symbol
+        spark_values = close.tail(60).tolist() if not close.empty else [1,2,1.5,2.4,2.1,3]
+        ymin, ymax = min(spark_values), max(spark_values)
+        span = max(ymax-ymin, 1e-9)
+        points = " ".join(f"{i*(320/max(len(spark_values)-1,1)):.1f},{84-((val-ymin)/span)*68:.1f}" for i,val in enumerate(spark_values))
+        open_text = money(q.get("open")); high_text = money(q.get("day_high")); low_text = money(q.get("day_low"))
+
+        st.markdown(f"""
+        <div class="trial-shell">
+          <section class="trial-hero">
+            <span class="trial-badge">STOCK ANALYSIS &amp; VALUATION</span>
+            <div class="trial-title">Make Smarter<br>Investment Decisions</div>
+            <div class="trial-sub">Advanced EPS-based valuation, live market data, and practical analysis tools in one place.</div>
+            <div class="trial-quote">
+              <div class="trial-quote-head"><div><div class="trial-symbol">{symbol}</div><div class="trial-muted">{company}</div></div><div><div class="trial-price">{money(price)}</div><div class="trial-gain">{change_text}</div></div></div>
+              <svg class="trial-spark" viewBox="0 0 320 90" preserveAspectRatio="none"><polyline points="{points}" fill="none" stroke="#22c55e" stroke-width="2.5"/><line x1="0" y1="86" x2="320" y2="86" stroke="rgba(148,163,184,.4)"/></svg>
+              <div class="trial-quote-grid"><div class="trial-qstat">Open<b>{open_text}</b></div><div class="trial-qstat">High<b>{high_text}</b></div><div class="trial-qstat">Low<b>{low_text}</b></div></div>
+            </div>
+          </section>
+          <div class="trial-kpis">
+            <div class="trial-kpi"><div class="trial-kpi-label">Fair Value</div><div class="trial-kpi-value">{money(fair_value)}</div><div class="trial-kpi-note trial-warning">Upside: {'N/A' if margin is None else f'{margin:.2f}%'} </div></div>
+            <div class="trial-kpi"><div class="trial-kpi-label">Market Price</div><div class="trial-kpi-value">{money(price)}</div><div class="trial-kpi-note">Live / delayed quote</div></div>
+            <div class="trial-kpi"><div class="trial-kpi-label">Margin of Safety</div><div class="trial-kpi-value trial-positive">{'N/A' if margin is None else f'{margin:.2f}%'}</div><div class="trial-kpi-note">{'Very Good' if margin is not None and margin >= 20 else 'Positive' if margin is not None and margin > 0 else 'Limited'}</div></div>
+            <div class="trial-kpi"><div class="trial-kpi-label">EPS (TTM)</div><div class="trial-kpi-value">{money(v.get('Trailing EPS'))}</div><div class="trial-kpi-note">Trailing Twelve Months</div></div>
+            <div class="trial-kpi"><div class="trial-kpi-label">P/E Ratio</div><div class="trial-kpi-value">{'N/A' if v.get('P/E') is None else f"{v.get('P/E'):.2f}"}</div><div class="trial-kpi-note">Current valuation multiple</div></div>
+            <div class="trial-kpi"><div class="trial-kpi-label">Rating</div><div class="trial-kpi-value" style="color:{rating_color}">{rating}</div><div class="trial-kpi-note">Investment Rating</div></div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        left, right = st.columns([1, 2], gap="medium")
+        with left:
+            st.markdown(f"""
+            <div class="trial-panel">
+              <div class="trial-panel-title">Investment Rating</div>
+              <div class="trial-rating" style="color:{rating_color}">{rating.title()}</div>
+              <div class="trial-muted">{'N/A' if margin is None else f'{margin:.2f}%'} upside potential</div>
+              <p style="color:#cbd5e1;font-size:.86rem;line-height:1.5;margin-top:16px">The stock is compared with its calculated EPS-based fair value and ranked using valuation and growth inputs.</p>
+              <div class="trial-list-row"><span>Valuation</span><span>{'Attractive' if margin is not None and margin > 10 else 'Mixed'}</span></div>
+              <div class="trial-list-row"><span>Growth Prospects</span><span>{'Good' if (v.get('EPS Growth %') or 0) > 0 else 'Cautious'}</span></div>
+              <div class="trial-list-row"><span>Financial Health</span><span>Review</span></div>
+              <div class="trial-list-row"><span>Industry Outlook</span><span>{v.get('Sector') or 'N/A'}</span></div>
+              <div class="trial-list-row"><span>Margin of Safety</span><span>{'Very Good' if margin is not None and margin >= 20 else 'Moderate'}</span></div>
+            </div>
+            """, unsafe_allow_html=True)
+        with right:
+            chart_df = pd.DataFrame({"Market Price": close})
+            if fair_value:
+                chart_df["Fair Value"] = float(fair_value)
+            fig = go.Figure()
+            if "Fair Value" in chart_df:
+                fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df["Fair Value"], name="Fair Value", line=dict(width=3, color="#22c55e")))
+            fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df["Market Price"], name="Market Price", line=dict(width=2.5, color="#1677ff")))
+            fig.update_layout(
+                title="Fair Value vs Market Price",
+                height=360,
+                margin=dict(l=20,r=20,t=55,b=20),
+                paper_bgcolor="#091a31", plot_bgcolor="#091a31",
+                font=dict(color="#dbeafe"),
+                legend=dict(orientation="h", y=1.12, x=0),
+                xaxis=dict(gridcolor="rgba(148,163,184,.15)"),
+                yaxis=dict(gridcolor="rgba(148,163,184,.15)", tickprefix="$"),
+                hovermode="x unified",
             )
-            left_stats, right_stats = st.columns(2, gap="large")
-            with left_stats:
-                left_rows = [
-                    ("Previous Close", money(q["previous_close"])),
-                    ("Open", money(q["open"])),
-                    ("Bid", "N/A" if q["bid"] is None else f'{money(q["bid"])} x {int(q["bid_size"] or 0)}'),
-                    ("Ask", "N/A" if q["ask"] is None else f'{money(q["ask"])} x {int(q["ask_size"] or 0)}'),
-                    ("Day's Range", "N/A" if q["day_low"] is None or q["day_high"] is None else f'{money(q["day_low"])} - {money(q["day_high"])}'),
-                    ("52 Week Range", "N/A" if q["week52_low"] is None or q["week52_high"] is None else f'{money(q["week52_low"])} - {money(q["week52_high"])}'),
-                ]
-                for label, value in left_rows:
-                    st.markdown(
-                        f"""
-                        <div style="display:flex;justify-content:space-between;align-items:center;
-                                    margin:.35rem 0;color:#000000 !important;
-                                    font-weight:900 !important;">
-                            <span style="color:#000000 !important;font-weight:900 !important;">{label}</span>
-                            <span style="color:#000000 !important;font-weight:900 !important;">{value}</span>
-                        </div>
-                        <hr style="margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)">
-                        """,
-                        unsafe_allow_html=True,
-                    )
-            with right_stats:
-                dividend_text = "N/A" if q["dividend_rate"] is None else f'{money(q["dividend_rate"])} ({q["dividend_yield"]:.2f}%)'
-                right_rows = [
-                    ("Volume", compact_number(q["volume"])),
-                    ("Avg. Volume", compact_number(q["avg_volume"])),
-                    ("Market Cap", compact_number(q["market_cap"])),
-                    ("Beta (5Y Monthly)", "N/A" if q["beta"] is None else f'{q["beta"]:.2f}'),
-                    ("PE Ratio (TTM)", "N/A" if q["pe"] is None else f'{q["pe"]:.2f}'),
-                    ("EPS (TTM)", "N/A" if q["eps"] is None else money(q["eps"])),
-                    ("Earnings Date", q["earnings_date"] or "N/A"),
-                    ("Forward Dividend & Yield", dividend_text),
-                ]
-                for label, value in right_rows:
-                    st.markdown(
-                        f"""
-                        <div style="display:flex;justify-content:space-between;align-items:center;
-                                    margin:.35rem 0;color:#000000 !important;
-                                    font-weight:900 !important;">
-                            <span style="color:#000000 !important;font-weight:900 !important;">{label}</span>
-                            <span style="color:#000000 !important;font-weight:900 !important;">{value}</span>
-                        </div>
-                        <hr style="margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)">
-                        """,
-                        unsafe_allow_html=True,
-                    )
-            if st.button(f'Analyze {q["ticker"]} in Full Dashboard →', type="primary", key="home_analyze_quote"):
-                st.session_state.selected_ticker = q["ticker"]
-                st.session_state.options_ticker = q["ticker"]
-                st.session_state.active_section = "Price vs EPS"
-                st.rerun()
-        except Exception as exc:
-            st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
+            st.plotly_chart(fig, use_container_width=True, config={"displaylogo":False})
+
+        st.markdown("""
+        <div class="trial-footer-grid">
+          <div class="trial-feature"><div class="trial-feature-icon">🛡️</div><div><b>EPS-Based Valuation</b><span>Multiple valuation methods already built into the application.</span></div></div>
+          <div class="trial-feature"><div class="trial-feature-icon">⚡</div><div><b>Live Market Data</b><span>Quotes, price history, market activity, and technical data.</span></div></div>
+          <div class="trial-feature"><div class="trial-feature-icon">✓</div><div><b>Comprehensive Analysis</b><span>Valuation, watchlists, options, backtesting, and paper trading.</span></div></div>
+          <div class="trial-feature"><div class="trial-feature-icon">🔒</div><div><b>Local Portfolio Data</b><span>Paper-trading records remain stored in the application's database.</span></div></div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        render_navigation("home_nav")
+        if st.button(f"Analyze {symbol} in Full Dashboard →", type="primary", key="trial_full_analysis"):
+            st.session_state.selected_ticker = symbol
+            st.session_state.options_ticker = symbol
+            st.session_state.active_section = "Price vs EPS"
+            st.rerun()
+    except Exception as exc:
+        st.error(f"Dashboard data unavailable for {symbol}: {exc}")
+        render_navigation("home_nav")
 
 
 init_db()
