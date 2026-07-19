@@ -163,7 +163,6 @@ APP_DIR = Path(__file__).resolve().parent
 DB_PATH = APP_DIR / "paper_trading.db"
 
 CATEGORY_LISTS = {
-    "Top 35": ["NVDA","TSLA","AAPL","AMD","AMZN","SOFI","PLTR","INTC","F","BAC","MU","NIO","MARA","RIVN","LCID","T","PFE","CCL","AAL","SNAP","MSFT","META","GOOGL","NFLX","AVGO","QCOM","CSCO","ORCL","CRM","UBER","SHOP","COIN","HOOD","PYPL","XYZ"],
     "Magnificent 7": ["AAPL","MSFT","AMZN","GOOGL","META","NVDA","TSLA"],
     "Dividend Kings": [
         "ABM","ADP","AWR","BDX","BKH","CINF","CL","CWT","DOV","EMR",
@@ -788,6 +787,27 @@ def most_active_quotes():
     return rows[:10]
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def most_active_symbols(count=100):
+    """Return up to `count` of today's most actively traded equity tickers,
+    used as the scan pool for the dynamic 'Top Buys' watchlist."""
+    fallback = [
+        "NVDA","TSLA","AAPL","AMD","AMZN","SOFI","PLTR","INTC","F","BAC",
+        "MU","NIO","MARA","RIVN","LCID","T","PFE","CCL","AAL","SNAP",
+        "MSFT","META","GOOGL","NFLX","AVGO","QCOM","CSCO","ORCL","CRM","UBER",
+        "SHOP","COIN","HOOD","PYPL","XYZ",
+    ]
+    symbols = []
+    try:
+        result = yf.screen("most_actives", count=count)
+        quotes = result.get("quotes", []) if isinstance(result, dict) else []
+        symbols = [q.get("symbol") for q in quotes if q.get("symbol") and q.get("quoteType") in (None, "EQUITY")]
+    except Exception:
+        symbols = []
+    symbols = list(dict.fromkeys(symbols + fallback))
+    return symbols[:count]
+
+
 def money(value):
     return "N/A" if value is None else f"${value:,.2f}"
 
@@ -1074,7 +1094,7 @@ if active_section == "Price vs EPS":
 if active_section == "Watchlists":
     st.session_state.setdefault("watchlist_category", "Most Active")
     st.subheader("Watchlists")
-    category_names = ["Most Active"] + list(CATEGORY_LISTS)
+    category_names = ["Most Active", "Top Buys"] + list(CATEGORY_LISTS)
     category_cols = st.columns(len(category_names), gap="small")
     for category_col, category_name in zip(category_cols, category_names):
         with category_col:
@@ -1090,68 +1110,89 @@ if active_section == "Watchlists":
     if category == "Most Active":
         with st.spinner("Loading most actively traded stocks..."):
             tickers = [row["ticker"] for row in most_active_quotes()]
+        with st.spinner(f"Loading {category}..."):
+            watch_df = scan_group(tuple(tickers))
         st.caption("Ranked by reported trading volume. Click any row to load that ticker directly into the chart and Options Finder.")
+    elif category == "Top Buys":
+        with st.spinner("Scanning today's most actively traded stocks for BUY signals..."):
+            pool_tickers = most_active_symbols(count=100)
+            scanned = scan_group(tuple(pool_tickers))
+        watch_df = (
+            scanned[scanned["Signal"] == "BUY"]
+            .sort_values(by="Score", ascending=False, na_position="last")
+            .head(10)
+            .reset_index(drop=True)
+        )
+        if watch_df.empty:
+            st.info("No BUY-rated stocks found among today's most actively traded tickers right now.")
+        else:
+            st.caption(
+                f"Top {len(watch_df)} BUY-rated stock{'s' if len(watch_df) != 1 else ''} out of "
+                f"{len(pool_tickers)} of today's most actively traded tickers scanned. "
+                "Click any row to load that ticker directly into the chart and Options Finder."
+            )
     else:
         tickers = CATEGORY_LISTS[category]
-    with st.spinner(f"Loading {category}..."):
-        watch_df = scan_group(tuple(tickers))
-    if category == "Warren Buffett":
-        watch_df["% of Total Portfolio"] = watch_df["Ticker"].map(BUFFETT_PORTFOLIO_WEIGHTS)
-        st.caption(
-            f"Portfolio percentages are based on Berkshire Hathaway's latest disclosed 13F holdings "
-            f"as of {BUFFETT_13F_REPORT_DATE}. Click any row to load that ticker."
+        with st.spinner(f"Loading {category}..."):
+            watch_df = scan_group(tuple(tickers))
+        if category == "Warren Buffett":
+            watch_df["% of Total Portfolio"] = watch_df["Ticker"].map(BUFFETT_PORTFOLIO_WEIGHTS)
+            st.caption(
+                f"Portfolio percentages are based on Berkshire Hathaway's latest disclosed 13F holdings "
+                f"as of {BUFFETT_13F_REPORT_DATE}. Click any row to load that ticker."
+            )
+        else:
+            st.caption("Click any row to load that ticker directly into the chart and Options Finder.")
+    if not watch_df.empty:
+        watch_df = watch_df.rename(columns={"Dividend Yield %": "Div.Yield %"})
+        if "Signal" in watch_df.columns:
+            watch_df["Signal"] = watch_df["Signal"].map(normalize_signal)
+        # Show the strongest-ranked stocks first while keeping Streamlit's
+        # interactive header sorting available to the user.
+        if "Score" in watch_df.columns:
+            watch_df = watch_df.sort_values(by="Score", ascending=False, na_position="last").reset_index(drop=True)
+
+        # Keep Score immediately after Price for every watchlist category.
+        preferred_order = ["Ticker", "Company Name"]
+        if "% of Total Portfolio" in watch_df.columns:
+            preferred_order.append("% of Total Portfolio")
+        preferred_order.extend([
+            "Price", "Score", "Original Fair Value", "Relative Fair Value", "Signal",
+            "P/E", "Forward EPS", "Div.Yield %", "52W Low", "52W High"
+        ])
+        remaining_columns = [col for col in watch_df.columns if col not in preferred_order]
+        watch_df = watch_df[[col for col in preferred_order if col in watch_df.columns] + remaining_columns]
+        watch_display_df = watch_df.copy()
+        watch_display_df.insert(0, "Symbol Company", watch_display_df["Ticker"].map(symbol_company))
+        watch_display_df = watch_display_df.drop(columns=["Ticker", "Company Name"], errors="ignore")
+
+        event = st.dataframe(
+            watch_display_df,
+            key=f"watchlist_table_{category}",
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            column_config={
+                "Symbol Company": st.column_config.TextColumn(width=260),
+                "Price": st.column_config.NumberColumn(format="$%.2f", width=105),
+                "Score": st.column_config.NumberColumn(width=85),
+                "Original Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
+                "Relative Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
+                "Signal": st.column_config.TextColumn(width=115),
+                "P/E": st.column_config.NumberColumn(format="%.2f", width=90),
+                "Forward EPS": st.column_config.NumberColumn(format="%.2f", width=125),
+                "% of Total Portfolio": st.column_config.NumberColumn(format="%.2f%%", width=170),
+                "Div.Yield %": st.column_config.NumberColumn(format="%.2f%%", width=125),
+                "52W Low": st.column_config.NumberColumn(format="$%.2f", width=105),
+                "52W High": st.column_config.NumberColumn(format="$%.2f", width=105),
+            }
         )
-    elif category != "Most Active":
-        st.caption("Click any row to load that ticker directly into the chart and Options Finder.")
-    watch_df = watch_df.rename(columns={"Dividend Yield %": "Div.Yield %"})
-    if "Signal" in watch_df.columns:
-        watch_df["Signal"] = watch_df["Signal"].map(normalize_signal)
-    # Show the strongest-ranked stocks first while keeping Streamlit's
-    # interactive header sorting available to the user.
-    if "Score" in watch_df.columns:
-        watch_df = watch_df.sort_values(by="Score", ascending=False, na_position="last").reset_index(drop=True)
-
-    # Keep Score immediately after Price for every watchlist category.
-    preferred_order = ["Ticker", "Company Name"]
-    if "% of Total Portfolio" in watch_df.columns:
-        preferred_order.append("% of Total Portfolio")
-    preferred_order.extend([
-        "Price", "Score", "Original Fair Value", "Relative Fair Value", "Signal",
-        "P/E", "Forward EPS", "Div.Yield %", "52W Low", "52W High"
-    ])
-    remaining_columns = [col for col in watch_df.columns if col not in preferred_order]
-    watch_df = watch_df[[col for col in preferred_order if col in watch_df.columns] + remaining_columns]
-    watch_display_df = watch_df.copy()
-    watch_display_df.insert(0, "Symbol Company", watch_display_df["Ticker"].map(symbol_company))
-    watch_display_df = watch_display_df.drop(columns=["Ticker", "Company Name"], errors="ignore")
-
-    event = st.dataframe(
-        watch_display_df,
-        key=f"watchlist_table_{category}",
-        use_container_width=True,
-        hide_index=True,
-        on_select="rerun",
-        selection_mode="single-row",
-        column_config={
-            "Symbol Company": st.column_config.TextColumn(width=260),
-            "Price": st.column_config.NumberColumn(format="$%.2f", width=105),
-            "Score": st.column_config.NumberColumn(width=85),
-            "Original Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
-            "Relative Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
-            "Signal": st.column_config.TextColumn(width=115),
-            "P/E": st.column_config.NumberColumn(format="%.2f", width=90),
-            "Forward EPS": st.column_config.NumberColumn(format="%.2f", width=125),
-            "% of Total Portfolio": st.column_config.NumberColumn(format="%.2f%%", width=170),
-            "Div.Yield %": st.column_config.NumberColumn(format="%.2f%%", width=125),
-            "52W Low": st.column_config.NumberColumn(format="$%.2f", width=105),
-            "52W High": st.column_config.NumberColumn(format="$%.2f", width=105),
-        }
-    )
-    selected_rows = event.selection.rows if event and hasattr(event, "selection") else []
-    if selected_rows:
-        selected = str(watch_df.iloc[selected_rows[0]]["Ticker"]).upper().strip()
-        st.session_state.pending_watchlist_ticker = selected
-        st.rerun()
+        selected_rows = event.selection.rows if event and hasattr(event, "selection") else []
+        if selected_rows:
+            selected = str(watch_df.iloc[selected_rows[0]]["Ticker"]).upper().strip()
+            st.session_state.pending_watchlist_ticker = selected
+            st.rerun()
 
 if active_section == "Paper Trading":
     cash_col, save_col = st.columns([4, 1])
