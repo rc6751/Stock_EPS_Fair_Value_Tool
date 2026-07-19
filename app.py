@@ -1,5 +1,6 @@
 import math
 import sqlite3
+import uuid
 from datetime import date, datetime
 from pathlib import Path
 from statistics import NormalDist
@@ -14,36 +15,65 @@ import yfinance as yf
 
 st.set_page_config(page_title="Stock_EPS_Fair_Value_Tool", page_icon="📈", layout="wide")
 
-# Scroll to the top only after the user changes sections.
-# Ordinary widget reruns, including Get Quote, keep the current page position.
-def request_scroll_to_top():
-    st.session_state["_scroll_to_top"] = True
-
-
-def apply_requested_scroll():
-    if not st.session_state.pop("_scroll_to_top", False):
-        return
+def scroll_page_to_top():
+    render_id = uuid.uuid4().hex
     components.html(
-        """
+        f"""
         <script>
-        (function () {
-            const win = window.parent;
-            const doc = win.document;
-            win.requestAnimationFrame(() => {
-                win.scrollTo({top: 0, left: 0, behavior: "instant"});
-                doc.documentElement.scrollTop = 0;
-                doc.body.scrollTop = 0;
-                const main = doc.querySelector('[data-testid="stAppViewContainer"]');
-                if (main) main.scrollTop = 0;
-            });
-        })();
+        (() => {{
+            const parentWindow = window.parent;
+            const parentDocument = parentWindow.document;
+            const scrollContainers = [
+                parentDocument.documentElement,
+                parentDocument.body,
+                parentDocument.querySelector('[data-testid="stAppViewContainer"]'),
+                parentDocument.querySelector('[data-testid="stMain"]'),
+                parentDocument.querySelector('[data-testid="stAppViewBlockContainer"]'),
+                parentDocument.querySelector('section.main'),
+                parentDocument.querySelector('.main')
+            ].filter(Boolean);
+
+            let enabled = true;
+            let intervalId;
+            let observer;
+
+            const scrollToTop = () => {{
+                if (!enabled) return;
+                parentWindow.scrollTo({{ top: 0, left: 0, behavior: 'instant' }});
+                scrollContainers.forEach(container => {{ container.scrollTop = 0; }});
+            }};
+
+            const stopScrolling = () => {{
+                enabled = false;
+                if (intervalId) parentWindow.clearInterval(intervalId);
+                if (observer) observer.disconnect();
+            }};
+
+            ['wheel', 'touchmove', 'keydown', 'mousedown'].forEach(eventName => {{
+                parentDocument.addEventListener(eventName, stopScrolling, {{ once: true, passive: true }});
+            }});
+
+            scrollToTop();
+
+            let attempts = 0;
+            intervalId = parentWindow.setInterval(() => {{
+                scrollToTop();
+                attempts += 1;
+                if (attempts > 8) stopScrolling();
+            }}, 150);
+
+            observer = new MutationObserver(scrollToTop);
+            observer.observe(parentDocument.body, {{ childList: true, subtree: true }});
+            parentWindow.setTimeout(stopScrolling, 1200);
+        }})();
         </script>
+        <!-- render-id: {render_id} -->
         """,
         height=0,
     )
 
 
-apply_requested_scroll()
+scroll_page_to_top()
 
 st.markdown("""
 <style>
@@ -754,27 +784,9 @@ def render_navigation(key_prefix="nav"):
                 type="primary" if st.session_state.active_section == section_name else "secondary",
             ):
                 st.session_state.active_section = section_name
-                request_scroll_to_top()
                 st.rerun()
 
 def render_homepage():
-    st.markdown(
-        """
-        <style>
-        [data-testid="stMain"] {
-            background-color: #eef9f0;
-            background-image:
-                linear-gradient(rgba(238, 249, 240, .94), rgba(238, 249, 240, .94)),
-                radial-gradient(circle at 50% 50%, rgba(22, 101, 52, .055) 0 2px, transparent 2.5px);
-            background-size: auto, 34px 34px;
-        }
-        [data-testid="stMainBlockContainer"] {
-            background: transparent;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
     st.markdown('<div class="section-title">MAJOR MARKETS</div><div class="section-copy"></div>', unsafe_allow_html=True)
     market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
     market_cols = st.columns(6)
