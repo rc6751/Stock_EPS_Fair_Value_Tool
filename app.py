@@ -1,6 +1,5 @@
 import math
 import sqlite3
-import uuid
 from datetime import date, datetime
 from pathlib import Path
 from statistics import NormalDist
@@ -15,65 +14,22 @@ import yfinance as yf
 
 st.set_page_config(page_title="Stock_EPS_Fair_Value_Tool", page_icon="📈", layout="wide")
 
-def scroll_page_to_top():
-    render_id = uuid.uuid4().hex
-    components.html(
-        f"""
-        <script>
-        (() => {{
-            const parentWindow = window.parent;
-            const parentDocument = parentWindow.document;
-            const scrollContainers = [
-                parentDocument.documentElement,
-                parentDocument.body,
-                parentDocument.querySelector('[data-testid="stAppViewContainer"]'),
-                parentDocument.querySelector('[data-testid="stMain"]'),
-                parentDocument.querySelector('[data-testid="stAppViewBlockContainer"]'),
-                parentDocument.querySelector('section.main'),
-                parentDocument.querySelector('.main')
-            ].filter(Boolean);
-
-            let enabled = true;
-            let intervalId;
-            let observer;
-
-            const scrollToTop = () => {{
-                if (!enabled) return;
-                parentWindow.scrollTo({{ top: 0, left: 0, behavior: 'instant' }});
-                scrollContainers.forEach(container => {{ container.scrollTop = 0; }});
-            }};
-
-            const stopScrolling = () => {{
-                enabled = false;
-                if (intervalId) parentWindow.clearInterval(intervalId);
-                if (observer) observer.disconnect();
-            }};
-
-            ['wheel', 'touchmove', 'keydown', 'mousedown'].forEach(eventName => {{
-                parentDocument.addEventListener(eventName, stopScrolling, {{ once: true, passive: true }});
-            }});
-
-            scrollToTop();
-
-            let attempts = 0;
-            intervalId = parentWindow.setInterval(() => {{
-                scrollToTop();
-                attempts += 1;
-                if (attempts > 8) stopScrolling();
-            }}, 150);
-
-            observer = new MutationObserver(scrollToTop);
-            observer.observe(parentDocument.body, {{ childList: true, subtree: true }});
-            parentWindow.setTimeout(stopScrolling, 1200);
-        }})();
-        </script>
-        <!-- render-id: {render_id} -->
-        """,
-        height=0,
-    )
-
-
-scroll_page_to_top()
+# Keep the app at the top after an initial load or Streamlit rerun.
+components.html(
+    """<script>
+    const scrollTop = () => {
+        try {
+            window.parent.scrollTo({top: 0, left: 0, behavior: 'instant'});
+            const main = window.parent.document.querySelector('section.main');
+            if (main) main.scrollTo({top: 0, left: 0, behavior: 'instant'});
+        } catch (e) {}
+    };
+    scrollTop();
+    setTimeout(scrollTop, 50);
+    setTimeout(scrollTop, 250);
+    </script>""",
+    height=0,
+)
 
 st.markdown("""
 <style>
@@ -118,7 +74,7 @@ div.stButton > button {
 .eyebrow {display:inline-block;padding:7px 12px;border:1px solid rgba(255,255,255,.22);border-radius:999px;background:rgba(255,255,255,.08);font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;}
 .hero h1 {font-size:4rem;line-height:1.02;letter-spacing:-.055em;margin:22px 0 18px;max-width:740px;}
 .hero p {font-size:1.15rem;line-height:1.65;color:rgba(255,255,255,.78);max-width:600px;}
-.market-card {position:absolute;z-index:3;right:24px;top:24px;width:360px;padding:24px;border:1px solid rgba(255,255,255,.16);border-radius:20px;background:rgba(7,18,38,.68);backdrop-filter:blur(15px);box-shadow:0 24px 70px rgba(0,0,0,.3);}
+.market-card {position:absolute;z-index:3;right:24px;top:24px;width:360px;padding:24px;border:1px solid rgba(255,255,255,.16);border-radius:20px;background:#ffffff;color:#111827;box-shadow:0 24px 70px rgba(0,0,0,.18);}
 .market-card .ticker {display:flex;justify-content:space-between;align-items:end;margin-bottom:12px;}
 .market-card .price {font-size:1.9rem;font-weight:850;}
 .market-card .gain {color:#5ee8a5;font-weight:750;}
@@ -146,6 +102,7 @@ APP_DIR = Path(__file__).resolve().parent
 DB_PATH = APP_DIR / "paper_trading.db"
 
 CATEGORY_LISTS = {
+    "Top 35": ["NVDA","TSLA","AAPL","AMD","AMZN","SOFI","PLTR","INTC","F","BAC","MU","NIO","MARA","RIVN","LCID","T","PFE","CCL","AAL","SNAP","MSFT","META","GOOGL","NFLX","AVGO","QCOM","CSCO","ORCL","CRM","UBER","SHOP","COIN","HOOD","PYPL","XYZ"],
     "Magnificent 7": ["AAPL","MSFT","AMZN","GOOGL","META","NVDA","TSLA"],
     "Dividend Kings": [
         "ABM","ADP","AWR","BDX","BKH","CINF","CL","CWT","DOV","EMR",
@@ -204,6 +161,23 @@ BUFFETT_PORTFOLIO_WEIGHTS = {
     "JEF": 0.01
 }
 
+SECTOR_PE_DEFAULTS = {
+    "Technology": 30.0, "Communication Services": 24.0,
+    "Consumer Cyclical": 24.0, "Consumer Defensive": 22.0,
+    "Financial Services": 14.0, "Healthcare": 22.0,
+    "Industrials": 20.0, "Energy": 12.0, "Utilities": 18.0,
+    "Real Estate": 18.0, "Basic Materials": 16.0, "Unknown": 20.0,
+}
+INDUSTRY_PE_OVERRIDES = {
+    "Semiconductors": 35.0, "Semiconductor Equipment & Materials": 30.0,
+    "Software - Infrastructure": 30.0, "Software - Application": 30.0,
+    "Internet Content & Information": 28.0, "Banks - Diversified": 13.0,
+    "Banks - Regional": 12.0, "Oil & Gas Integrated": 12.0,
+    "Oil & Gas E&P": 11.0, "Drug Manufacturers - General": 20.0,
+    "Medical Devices": 24.0, "REIT - Retail": 17.0, "REIT - Industrial": 20.0,
+}
+
+
 def init_db():
     with sqlite3.connect(DB_PATH) as con:
         con.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
@@ -237,12 +211,6 @@ def sf(value):
         return None if math.isnan(result) or math.isinf(result) else result
     except Exception:
         return None
-
-
-def normalize_signal(value):
-    """Use BUY instead of BUY everywhere in the application."""
-    signal = str(value or "").strip().upper()
-    return "BUY" if signal == "BUY" else value
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -389,6 +357,10 @@ def valuation(ticker: str, manual_growth=None, manual_pe=None):
 
     sector = info.get("sector") or "Unknown"
     industry = info.get("industry") or "Unknown"
+    relative_pe = INDUSTRY_PE_OVERRIDES.get(industry, SECTOR_PE_DEFAULTS.get(sector, 20.0))
+    relative_eps = forward if forward and forward > 0 else trailing
+    relative = relative_eps * relative_pe if relative_eps and relative_eps > 0 else None
+
     annual_div = sf(info.get("dividendRate")) or 0.0
     div_yield = annual_div / current * 100 if current else 0.0
     low52 = sf(info.get("fiftyTwoWeekLow"))
@@ -401,15 +373,15 @@ def valuation(ticker: str, manual_growth=None, manual_pe=None):
     if growth is not None:
         score += max(-10, min(10, growth / 3))
     score = int(max(0, min(100, round(score))))
-    signal = "BUY" if score >= 65 else "HOLD" if score >= 45 else "SELL"
+    signal = "STRONG BUY" if score >= 80 else "BUY" if score >= 65 else "HOLD" if score >= 45 else "SELL"
 
     return {
         "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Original Fair Value": original,
-        "Score": score, "Signal": normalize_signal(signal),
+        "Relative Fair Value": relative, "Score": score, "Signal": signal,
         "P/E": pe, "Trailing EPS": trailing, "Forward EPS": forward,
         "EPS Growth %": growth, "Annual Dividend": annual_div,
         "Dividend Yield %": div_yield, "52W Low": low52, "52W High": high52,
-        "Sector": sector, "Industry": industry,
+        "Sector": sector, "Industry": industry, "Relative P/E": relative_pe,
         "Methods": methods, "Quarterly EPS": q,
     }
 
@@ -421,15 +393,12 @@ def scan_group(tickers_tuple):
         try:
             v = valuation(ticker)
             rows.append({k: v[k] for k in [
-                "Ticker", "Company Name", "Price", "Original Fair Value", "Score", "Signal",
+                "Ticker", "Company Name", "Price", "Original Fair Value", "Relative Fair Value", "Score", "Signal",
                 "P/E", "Forward EPS", "Dividend Yield %", "52W Low", "52W High"
             ]})
         except Exception:
             rows.append({"Ticker": ticker, "Company Name": company_name(ticker), "Signal": "DATA ERROR"})
-    result = pd.DataFrame(rows)
-    if "Signal" in result.columns:
-        result["Signal"] = result["Signal"].map(normalize_signal)
-    return result
+    return pd.DataFrame(rows)
 
 
 def calculate_rsi(close: pd.Series, periods=14):
@@ -488,12 +457,27 @@ def chart_figure(ticker, v, history_months):
     )
 
     original_fv = sf(v.get("Original Fair Value"))
-    if original_fv:
-        fig.add_hline(
-            y=original_fv, line_dash="dash", line_width=3,
-            annotation_text=f"Fair Value ${original_fv:,.2f}",
-            annotation_position="right", row=1, col=1
-        )
+    relative_fv = sf(v.get("Relative Fair Value"))
+
+    # Keep Relative FV off the chart when it is an outlier versus Original FV.
+    # A 30% maximum difference keeps the price scale useful while preserving
+    # the underlying Relative FV calculation elsewhere in the app.
+    relative_fv_for_chart = None
+    if original_fv and original_fv > 0 and relative_fv and relative_fv > 0:
+        relative_gap_pct = abs(relative_fv - original_fv) / original_fv
+        if relative_gap_pct <= 0.30:
+            relative_fv_for_chart = relative_fv
+
+    for label, value, dash in [
+        ("Original FV", original_fv, "dash"),
+        ("Relative FV", relative_fv_for_chart, "dot"),
+    ]:
+        if value:
+            fig.add_hline(
+                y=value, line_dash=dash, line_width=3,
+                annotation_text=f"{label} ${value:,.2f}",
+                annotation_position="right", row=1, col=1
+            )
 
     # Make RSI visually distinct with momentum zones and a prominent live reading.
     fig.add_hrect(
@@ -532,7 +516,7 @@ def chart_figure(ticker, v, history_months):
         ), row=2, col=1)
 
     values = pd.concat([close.loc[df.index], upper, lower]).dropna()
-    extras = [original_fv] if original_fv else []
+    extras = [x for x in (original_fv, relative_fv_for_chart) if x]
     if not values.empty:
         ymin = min([values.min()] + extras)
         ymax = max([values.max()] + extras)
@@ -561,7 +545,7 @@ def chart_figure(ticker, v, history_months):
         gridcolor="rgba(128,128,128,0.18)", title_text="RSI"
     )
     fig.update_layout(
-        title=f"{ticker} {v.get('Company Name', ticker)} — Price, Bollinger Bands, Fair Value and RSI",
+        title=f"{ticker} {v.get('Company Name', ticker)} — Price, Bollinger Bands, Fair Values and RSI",
         height=1120, xaxis_rangeslider_visible=False, hovermode="x unified",
         dragmode="zoom",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
@@ -734,27 +718,6 @@ def most_active_quotes():
     return rows[:10]
 
 
-@st.cache_data(ttl=900, show_spinner=False)
-def most_active_symbols(count=100):
-    """Return up to `count` of today's most actively traded equity tickers,
-    used as the scan pool for the dynamic 'Top Buys' watchlist."""
-    fallback = [
-        "NVDA","TSLA","AAPL","AMD","AMZN","SOFI","PLTR","INTC","F","BAC",
-        "MU","NIO","MARA","RIVN","LCID","T","PFE","CCL","AAL","SNAP",
-        "MSFT","META","GOOGL","NFLX","AVGO","QCOM","CSCO","ORCL","CRM","UBER",
-        "SHOP","COIN","HOOD","PYPL","XYZ",
-    ]
-    symbols = []
-    try:
-        result = yf.screen("most_actives", count=count)
-        quotes = result.get("quotes", []) if isinstance(result, dict) else []
-        symbols = [q.get("symbol") for q in quotes if q.get("symbol") and q.get("quoteType") in (None, "EQUITY")]
-    except Exception:
-        symbols = []
-    symbols = list(dict.fromkeys(symbols + fallback))
-    return symbols[:count]
-
-
 def money(value):
     return "N/A" if value is None else f"${value:,.2f}"
 
@@ -766,12 +729,6 @@ def compact_number(value):
         if abs(value) >= divisor:
             return f"{value/divisor:,.2f}{unit}"
     return f"{value:,.0f}"
-
-def go_to_chart(ticker_symbol):
-    st.session_state.selected_ticker = ticker_symbol
-    st.session_state.options_ticker = ticker_symbol
-    st.session_state.active_section = "Price vs EPS"
-
 
 def render_navigation(key_prefix="nav"):
     nav_columns = st.columns(len(section_names), gap="small")
@@ -787,35 +744,17 @@ def render_navigation(key_prefix="nav"):
                 st.rerun()
 
 def render_homepage():
-    """Trial dashboard inspired by the supplied professional dark-theme mockup."""
     st.markdown('<div class="section-title">MAJOR MARKETS</div><div class="section-copy"></div>', unsafe_allow_html=True)
-    market_assets = [
-        ("S&P 500", "^GSPC"),
-        ("S&P 500 E-mini Futures", "ES=F"),
-        ("Nasdaq", "^IXIC"),
-        ("Dow", "^DJI"),
-        ("VIX", "^VIX"),
-        ("Bitcoin", "BTC-USD"),
-        ("WTI Oil", "CL=F"),
-    ]
-    market_cols = st.columns(7)
+    market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
+    market_cols = st.columns(6)
     for col, (label, symbol) in zip(market_cols, market_assets):
         with col:
             try:
                 mq = quick_quote(symbol)
                 change = mq["change"]
                 change_pct = mq.get("change_pct")
-                name_color = (
-                    "#16a34a" if change is not None and change > 0
-                    else "#dc2626" if change is not None and change < 0
-                    else "#6b7280"
-                )
-                delta_text = (
-                    "N/A" if change is None
-                    else f"{change:+.2f}" + (
-                        f" ({change_pct:+.2f}%)" if change_pct is not None else ""
-                    )
-                )
+                name_color = "#16a34a" if change is not None and change > 0 else "#dc2626" if change is not None and change < 0 else "#6b7280"
+                delta_text = "N/A" if change is None else f"{change:+.2f}" + (f" ({change_pct:+.2f}%)" if change_pct is not None else "")
                 st.markdown(
                     f"""
                     <div style="padding:.55rem .65rem;border:1px solid rgba(128,128,128,.20);border-radius:12px;min-height:108px">
@@ -837,130 +776,104 @@ def render_homepage():
                     unsafe_allow_html=True,
                 )
 
-    # Existing application navigation directly under Major Markets.
-    render_navigation("home_nav")
-
     st.markdown("""
-    <style>
-    .trial-shell {background:linear-gradient(180deg,#061426 0%,#071a31 100%);padding:1rem;border-radius:20px;color:#f8fafc;border:1px solid rgba(96,165,250,.22)}
-    .trial-hero {position:relative;overflow:hidden;min-height:280px;border-radius:18px;padding:30px 34px;background:radial-gradient(circle at 90% 15%,rgba(37,99,235,.24),transparent 34%),linear-gradient(135deg,#071426,#08244a);border:1px solid rgba(96,165,250,.25);margin-bottom:14px}
-    .trial-badge {display:inline-block;background:#0f4fb7;border:1px solid rgba(147,197,253,.35);padding:7px 13px;border-radius:999px;font-size:.78rem;font-weight:800}
-    .trial-title {font-size:3.05rem;line-height:1.08;font-weight:900;letter-spacing:-.045em;margin:18px 0 12px;max-width:620px}
-    .trial-sub {font-size:1.03rem;color:#cbd5e1;max-width:650px;line-height:1.55}
-    .trial-quote {position:absolute;right:22px;top:22px;width:350px;background:rgba(4,18,41,.86);border:1px solid rgba(96,165,250,.28);border-radius:14px;padding:18px 20px;box-shadow:0 18px 45px rgba(0,0,0,.28)}
-    .trial-quote-head {display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.trial-symbol{font-size:1.35rem;font-weight:900}.trial-price{font-size:1.55rem;font-weight:900;color:#22c55e;text-align:right}.trial-muted{color:#a8b5c9;font-size:.84rem}.trial-gain{color:#22c55e;font-weight:800}
-    .trial-spark {width:100%;height:92px;margin:8px 0 3px}.trial-quote-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;border-top:1px solid rgba(148,163,184,.25);padding-top:10px}.trial-qstat{font-size:.72rem;color:#a8b5c9}.trial-qstat b{display:block;color:#fff;font-size:.86rem;margin-top:2px}
-    .trial-kpis {display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:12px 0}.trial-kpi{background:linear-gradient(145deg,#0a1a31,#0c2546);border:1px solid rgba(96,165,250,.26);border-radius:12px;padding:16px 12px;text-align:center;min-height:112px}.trial-kpi-label{font-size:.82rem;color:#d2d9e5}.trial-kpi-value{font-size:1.62rem;font-weight:900;margin:7px 0 3px}.trial-kpi-note{font-size:.75rem;color:#9eacc0}.trial-positive{color:#22c55e}.trial-warning{color:#fbbf24}
-    .trial-panel {background:linear-gradient(145deg,#091a31,#0b2545);border:1px solid rgba(96,165,250,.24);border-radius:14px;padding:18px;min-height:330px}.trial-panel-title{font-size:1rem;font-weight:850;margin-bottom:9px}.trial-rating{font-size:2rem;font-weight:900;color:#22c55e;margin-bottom:3px}.trial-list-row{display:flex;justify-content:space-between;padding:7px 9px;border-bottom:1px solid rgba(148,163,184,.15);font-size:.8rem}.trial-list-row span:last-child{color:#22c55e}
-    .trial-footer-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;background:linear-gradient(145deg,#091a31,#0b2545);border:1px solid rgba(96,165,250,.24);border-radius:14px;padding:22px;margin-top:14px}.trial-feature{display:flex;gap:12px}.trial-feature-icon{font-size:1.7rem}.trial-feature b{display:block;margin-bottom:5px}.trial-feature span{color:#a8b5c9;font-size:.82rem;line-height:1.45}
-    @media(max-width:1200px){.trial-quote{position:relative;right:auto;top:auto;width:auto;margin-top:24px}.trial-title{font-size:2.35rem}.trial-kpis{grid-template-columns:repeat(3,1fr)}}
-    @media(max-width:760px){.trial-kpis{grid-template-columns:repeat(2,1fr)}.trial-footer-grid{grid-template-columns:1fr 1fr}.trial-hero{padding:22px}.trial-title{font-size:2rem}}
-    </style>
+    <section class="hero">
+      <div class="hero-copy">
+        <span class="eyebrow">Research • Valuation • Technicals</span>
+        <h1>STOCK FAIR VALUE TOOL</h1>
+        <p>Check stocks, Bitcoin, major indexes and oil, then move directly into earnings-based valuation and technical analysis.</p>
+      </div>
+      <div class="market-card">
+        <div class="ticker"><div><div style="opacity:.62;font-size:.78rem">MARKET INTELLIGENCE</div><b>Quote → Valuation → Decision</b></div></div>
+        <svg class="spark" viewBox="0 0 340 160" preserveAspectRatio="none" aria-label="Illustrative market chart">
+          <defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#22d3ee" stop-opacity=".42"/><stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/></linearGradient></defs>
+          <path d="M0 130 C28 124,42 132,66 111 S105 117,128 89 S171 103,197 68 S236 79,260 47 S302 53,340 20 L340 160 L0 160 Z" fill="url(#area)"/>
+          <path d="M0 130 C28 124,42 132,66 111 S105 117,128 89 S171 103,197 68 S236 79,260 47 S302 53,340 20" fill="none" stroke="#67e8f9" stroke-width="4" stroke-linecap="round"/>
+        </svg>
+        <div class="statrow"><div class="stat">LIVE QUOTES<b>Stocks</b></div><div class="stat">MARKETS<b>Indexes</b></div><div class="stat">ALTERNATIVES<b>BTC + Oil</b></div></div>
+      </div>
+    </section>
     """, unsafe_allow_html=True)
 
-    default_symbol = st.session_state.get("home_quote_ticker") or st.session_state.get("selected_ticker") or "AAPL"
-    top_a, top_b = st.columns([5, 1])
-    with top_a:
-        dashboard_symbol = st.text_input(
-            "Dashboard stock symbol",
-            value=default_symbol,
-            placeholder="AAPL",
-            label_visibility="collapsed",
-            key="trial_dashboard_symbol",
-        ).upper().strip()
-    with top_b:
-        refresh_dashboard = st.button("Stock Analyzer", type="primary", use_container_width=True, key="trial_load_dashboard")
-    if refresh_dashboard and dashboard_symbol:
-        st.session_state.home_quote_ticker = dashboard_symbol
-        st.rerun()
+    render_navigation("home_nav")
 
-    symbol = (st.session_state.get("home_quote_ticker") or dashboard_symbol or "AAPL").upper().strip()
-    try:
-        q = quick_quote(symbol)
-        v = valuation(symbol)
-        history = get_history(symbol, period="1y", interval="1d")
-        close = pd.to_numeric(history["Close"], errors="coerce").dropna()
-        price = q.get("price") or v.get("Price")
-        fair_value = v.get("Original Fair Value")
-        margin = ((fair_value - price) / fair_value * 100) if fair_value and price else None
-        rating = normalize_signal(v.get("Signal") or "N/A")
-        rating_color = "#22c55e" if rating == "BUY" else "#fbbf24" if rating == "HOLD" else "#ef4444"
-        change = q.get("change")
-        change_pct = q.get("change_pct")
-        change_text = "N/A" if change is None else f"{change:+.2f} ({change_pct:+.2f}%)" if change_pct is not None else f"{change:+.2f}"
-        company = q.get("name") or v.get("Company Name") or symbol
-        spark_values = close.tail(60).tolist() if not close.empty else [1,2,1.5,2.4,2.1,3]
-        ymin, ymax = min(spark_values), max(spark_values)
-        span = max(ymax-ymin, 1e-9)
-        points = " ".join(f"{i*(320/max(len(spark_values)-1,1)):.1f},{84-((val-ymin)/span)*68:.1f}" for i,val in enumerate(spark_values))
-        open_text = money(q.get("open")); high_text = money(q.get("day_high")); low_text = money(q.get("day_low"))
-
-        st.markdown(f"""
-        <div class="trial-shell">
-          <section class="trial-hero">
-            <span class="trial-badge">STOCK ANALYSIS &amp; VALUATION</span>
-            <div class="trial-title">Make Smarter<br>Investment Decisions</div>
-            <div class="trial-sub">Advanced EPS-based valuation, live market data, and practical analysis tools in one place.</div>
-            <div class="trial-quote">
-              <div class="trial-quote-head"><div><div class="trial-symbol">{symbol}</div><div class="trial-muted">{company}</div></div><div><div class="trial-price">{money(price)}</div><div class="trial-gain">{change_text}</div></div></div>
-              <svg class="trial-spark" viewBox="0 0 320 90" preserveAspectRatio="none"><polyline points="{points}" fill="none" stroke="#22c55e" stroke-width="2.5"/><line x1="0" y1="86" x2="320" y2="86" stroke="rgba(148,163,184,.4)"/></svg>
-              <div class="trial-quote-grid"><div class="trial-qstat">Open<b>{open_text}</b></div><div class="trial-qstat">High<b>{high_text}</b></div><div class="trial-qstat">Low<b>{low_text}</b></div></div>
-            </div>
-          </section>
-          <div class="trial-kpis">
-            <div class="trial-kpi"><div class="trial-kpi-label">Fair Value</div><div class="trial-kpi-value">{money(fair_value)}</div><div class="trial-kpi-note trial-warning">Upside: {'N/A' if margin is None else f'{margin:.2f}%'} </div></div>
-            <div class="trial-kpi"><div class="trial-kpi-label">Market Price</div><div class="trial-kpi-value">{money(price)}</div><div class="trial-kpi-note">Live / delayed quote</div></div>
-            <div class="trial-kpi"><div class="trial-kpi-label">Margin of Safety</div><div class="trial-kpi-value trial-positive">{'N/A' if margin is None else f'{margin:.2f}%'}</div><div class="trial-kpi-note">{'Very Good' if margin is not None and margin >= 20 else 'Positive' if margin is not None and margin > 0 else 'Limited'}</div></div>
-            <div class="trial-kpi"><div class="trial-kpi-label">EPS (TTM)</div><div class="trial-kpi-value">{money(v.get('Trailing EPS'))}</div><div class="trial-kpi-note">Trailing Twelve Months</div></div>
-            <div class="trial-kpi"><div class="trial-kpi-label">P/E Ratio</div><div class="trial-kpi-value">{'N/A' if v.get('P/E') is None else f"{v.get('P/E'):.2f}"}</div><div class="trial-kpi-note">Current valuation multiple</div></div>
-            <div class="trial-kpi"><div class="trial-kpi-label">Rating</div><div class="trial-kpi-value" style="color:{rating_color}">{rating}</div><div class="trial-kpi-note">Investment Rating</div></div>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        left, right = st.columns([1, 2], gap="medium")
-        with left:
-            st.markdown(f"""
-            <div class="trial-panel">
-              <div class="trial-panel-title">Investment Rating</div>
-              <div class="trial-rating" style="color:{rating_color}">{rating.title()}</div>
-              <div class="trial-muted">{'N/A' if margin is None else f'{margin:.2f}%'} upside potential</div>
-              <p style="color:#cbd5e1;font-size:.86rem;line-height:1.5;margin-top:16px">The stock is compared with its calculated EPS-based fair value and ranked using valuation and growth inputs.</p>
-              <div class="trial-list-row"><span>Valuation</span><span>{'Attractive' if margin is not None and margin > 10 else 'Mixed'}</span></div>
-              <div class="trial-list-row"><span>Growth Prospects</span><span>{'Good' if (v.get('EPS Growth %') or 0) > 0 else 'Cautious'}</span></div>
-              <div class="trial-list-row"><span>Financial Health</span><span>Review</span></div>
-              <div class="trial-list-row"><span>Industry Outlook</span><span>{v.get('Sector') or 'N/A'}</span></div>
-              <div class="trial-list-row"><span>Margin of Safety</span><span>{'Very Good' if margin is not None and margin >= 20 else 'Moderate'}</span></div>
-            </div>
-            """, unsafe_allow_html=True)
-        with right:
-            chart_df = pd.DataFrame({"Market Price": close})
-            if fair_value:
-                chart_df["Fair Value"] = float(fair_value)
-            fig = go.Figure()
-            if "Fair Value" in chart_df:
-                fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df["Fair Value"], name="Fair Value", line=dict(width=3, color="#22c55e")))
-            fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df["Market Price"], name="Market Price", line=dict(width=2.5, color="#1677ff")))
-            fig.update_layout(
-                title="Fair Value vs Market Price",
-                height=360,
-                margin=dict(l=20,r=20,t=55,b=20),
-                paper_bgcolor="#091a31", plot_bgcolor="#091a31",
-                font=dict(color="#dbeafe"),
-                legend=dict(orientation="h", y=1.12, x=0),
-                xaxis=dict(gridcolor="rgba(148,163,184,.15)"),
-                yaxis=dict(gridcolor="rgba(148,163,184,.15)", tickprefix="$"),
-                hovermode="x unified",
+    st.markdown('<div class="section-title">Instant market quote</div><div class="section-copy">Enter a stock symbol for a Yahoo Finance-style snapshot, then open the complete analysis.</div>', unsafe_allow_html=True)
+    q1, q2 = st.columns([5,1])
+    with q1:
+        home_ticker = st.text_input("Stock symbol", value=st.session_state.get("home_quote_ticker", ""), label_visibility="collapsed", placeholder="Enter ticker — AAPL, MSFT, KO...").upper().strip()
+    with q2:
+        get_quote = st.button("Get Quote", type="primary", use_container_width=True, key="home_get_quote")
+    if get_quote and home_ticker:
+        st.session_state.home_quote_ticker = home_ticker
+    quote_ticker = st.session_state.get("home_quote_ticker", "")
+    if quote_ticker:
+        try:
+            q = quick_quote(quote_ticker)
+            change_text = "N/A" if q["change"] is None else f'{q["change"]:+.2f}'
+            change_pct_text = "N/A" if q["change_pct"] is None else f'{q["change_pct"]:+.2f}%'
+            exchange_line = " • ".join(x for x in [q.get("exchange"), q.get("currency")] if x)
+            st.markdown(
+                f"""
+                <div style="padding:22px 24px;border:1px solid rgba(128,128,128,.24);border-radius:16px;background:rgba(128,128,128,.035);margin:8px 0 18px">
+                  <div style="font-size:1.55rem;font-weight:800;letter-spacing:-.02em">{symbol_company(q['ticker'])}</div>
+                  <div style="opacity:.65;font-size:.84rem;margin-top:2px">{exchange_line}</div>
+                  <div style="display:flex;align-items:baseline;gap:14px;margin-top:14px;flex-wrap:wrap">
+                    <span style="font-size:2.75rem;font-weight:850;letter-spacing:-.045em">{money(q['price'])}</span>
+                    <span style="font-size:1.08rem;font-weight:750">{change_text} ({change_pct_text})</span>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
-            st.plotly_chart(fig, use_container_width=True, config={"displaylogo":False})
+            left_stats, right_stats = st.columns(2, gap="large")
+            with left_stats:
+                left_rows = [
+                    ("Previous Close", money(q["previous_close"])),
+                    ("Open", money(q["open"])),
+                    ("Bid", "N/A" if q["bid"] is None else f'{money(q["bid"])} x {int(q["bid_size"] or 0)}'),
+                    ("Ask", "N/A" if q["ask"] is None else f'{money(q["ask"])} x {int(q["ask_size"] or 0)}'),
+                    ("Day's Range", "N/A" if q["day_low"] is None or q["day_high"] is None else f'{money(q["day_low"])} - {money(q["day_high"])}'),
+                    ("52 Week Range", "N/A" if q["week52_low"] is None or q["week52_high"] is None else f'{money(q["week52_low"])} - {money(q["week52_high"])}'),
+                ]
+                for label, value in left_rows:
+                    st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
+            with right_stats:
+                dividend_text = "N/A" if q["dividend_rate"] is None else f'{money(q["dividend_rate"])} ({q["dividend_yield"]:.2f}%)'
+                right_rows = [
+                    ("Volume", compact_number(q["volume"])),
+                    ("Avg. Volume", compact_number(q["avg_volume"])),
+                    ("Market Cap", compact_number(q["market_cap"])),
+                    ("Beta (5Y Monthly)", "N/A" if q["beta"] is None else f'{q["beta"]:.2f}'),
+                    ("PE Ratio (TTM)", "N/A" if q["pe"] is None else f'{q["pe"]:.2f}'),
+                    ("EPS (TTM)", "N/A" if q["eps"] is None else money(q["eps"])),
+                    ("Earnings Date", q["earnings_date"] or "N/A"),
+                    ("Forward Dividend & Yield", dividend_text),
+                ]
+                for label, value in right_rows:
+                    st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
+            if st.button(f'Analyze {q["ticker"]} in Full Dashboard →', type="primary", key="home_analyze_quote"):
+                st.session_state.selected_ticker = q["ticker"]
+                st.session_state.options_ticker = q["ticker"]
+                st.session_state.active_section = "Price vs EPS"
+                st.rerun()
+        except Exception as exc:
+            st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
 
-        if st.button(f"Analyze {symbol} in Full Dashboard →", type="primary", key="trial_full_analysis"):
-            st.session_state.selected_ticker = symbol
-            st.session_state.options_ticker = symbol
-            st.session_state.active_section = "Price vs EPS"
-            st.rerun()
+    st.markdown('<div class="section-title">Top 10 most actively traded</div><div class="section-copy">Ranked by reported trading volume. Click a symbol to update the instant quote.</div>', unsafe_allow_html=True)
+    try:
+        active = most_active_quotes()
+        for rank, row in enumerate(active, 1):
+            a,b,c,d,e = st.columns([.5,1.2,3,1.4,1.2])
+            a.write(f"**{rank}**")
+            if b.button(symbol_company(row["ticker"]), key=f"active_{rank}_{row['ticker']}", use_container_width=True):
+                st.session_state.home_quote_ticker = row["ticker"]
+                st.rerun()
+            c.write(row["name"] or "Name unavailable")
+            d.write(money(row["price"]))
+            pct = row.get("change_pct")
+            e.write("N/A" if pct is None else f"{pct:+.2f}%")
     except Exception as exc:
-        st.error(f"Dashboard data unavailable for {symbol}: {exc}")
+        st.info(f"Most-active data is temporarily unavailable: {exc}")
 
 
 init_db()
@@ -1036,12 +949,12 @@ if active_section == "Price vs EPS":
             with st.spinner(f"Loading {ticker}..."):
                 v = valuation(ticker, mg, mpe)
             st.markdown(f"### {symbol_company(v['Ticker'])}")
+            cols = st.columns(6)
             metrics = [
-                ("Price", v["Price"], "$"), ("Fair Value", v["Original Fair Value"], "$"),
-                ("Score", v["Score"], ""), ("Signal", normalize_signal(v["Signal"]), ""),
-                ("Dividend Yield", v["Dividend Yield %"], "%"),
+                ("Price", v["Price"], "$"), ("Original FV", v["Original Fair Value"], "$"),
+                ("Relative FV", v["Relative Fair Value"], "$"), ("Score", v["Score"], ""),
+                ("Signal", v["Signal"], ""), ("Dividend Yield", v["Dividend Yield %"], "%"),
             ]
-            cols = st.columns(len(metrics))
             for c, (label, value, unit) in zip(cols, metrics):
                 if isinstance(value, (int, float)) and value is not None:
                     text = f"${value:,.2f}" if unit == "$" else f"{value:,.2f}%" if unit == "%" else f"{value}"
@@ -1067,8 +980,8 @@ if active_section == "Price vs EPS":
             with right:
                 st.subheader("Fundamentals")
                 fundamentals = pd.DataFrame({
-                    "Metric": ["Sector", "Industry", "Trailing EPS", "Forward EPS", "P/E used", "EPS Growth"],
-                    "Value": [v["Sector"], v["Industry"], v["Trailing EPS"], v["Forward EPS"], v["P/E"], v["EPS Growth %"]]
+                    "Metric": ["Sector", "Industry", "Trailing EPS", "Forward EPS", "P/E used", "EPS Growth", "Relative P/E"],
+                    "Value": [v["Sector"], v["Industry"], v["Trailing EPS"], v["Forward EPS"], v["P/E"], v["EPS Growth %"], v["Relative P/E"]]
                 })
                 st.dataframe(fundamentals, use_container_width=True, hide_index=True)
         except Exception as exc:
@@ -1077,118 +990,79 @@ if active_section == "Price vs EPS":
         st.info("Enter a symbol above, then select Analyze.")
 
 if active_section == "Watchlists":
-    st.session_state.setdefault("watchlist_category", "Most Active")
+    st.session_state.setdefault("watchlist_category", list(CATEGORY_LISTS)[0])
     st.subheader("Watchlists")
-    st.markdown("""
-    <style>
-    .st-key-watchlist_tabs div[data-testid="stButton"] > button {
-        min-height: 2.1rem;
-        padding: .25rem .4rem;
-        font-size: .74rem;
-        font-weight: 700;
-        white-space: nowrap;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    category_names = ["Most Active", "Top Buys"] + list(CATEGORY_LISTS)
-    with st.container(key="watchlist_tabs"):
-        category_cols = st.columns(len(category_names), gap="small")
-        for category_col, category_name in zip(category_cols, category_names):
-            with category_col:
-                if st.button(
-                    category_name,
-                    key=f"watchlist_{category_name}",
-                    use_container_width=True,
-                    type="primary" if st.session_state.watchlist_category == category_name else "secondary",
-                ):
-                    st.session_state.watchlist_category = category_name
-                    st.rerun()
+    category_names = list(CATEGORY_LISTS)
+    category_cols = st.columns(len(category_names), gap="small")
+    for category_col, category_name in zip(category_cols, category_names):
+        with category_col:
+            if st.button(
+                category_name,
+                key=f"watchlist_{category_name}",
+                use_container_width=True,
+                type="primary" if st.session_state.watchlist_category == category_name else "secondary",
+            ):
+                st.session_state.watchlist_category = category_name
+                st.rerun()
     category = st.session_state.watchlist_category
-    if category == "Most Active":
-        with st.spinner("Loading most actively traded stocks..."):
-            tickers = [row["ticker"] for row in most_active_quotes()]
-        with st.spinner(f"Loading {category}..."):
-            watch_df = scan_group(tuple(tickers))
-        st.caption("Ranked by reported trading volume. Click any row to load that ticker directly into the chart and Options Finder.")
-    elif category == "Top Buys":
-        with st.spinner("Scanning today's most actively traded stocks for BUY signals..."):
-            pool_tickers = most_active_symbols(count=100)
-            scanned = scan_group(tuple(pool_tickers))
-        watch_df = (
-            scanned[scanned["Signal"] == "BUY"]
-            .sort_values(by="Score", ascending=False, na_position="last")
-            .head(10)
-            .reset_index(drop=True)
+    tickers = CATEGORY_LISTS[category]
+    with st.spinner(f"Loading {category}..."):
+        watch_df = scan_group(tuple(tickers))
+    if category == "Warren Buffett":
+        watch_df["% of Total Portfolio"] = watch_df["Ticker"].map(BUFFETT_PORTFOLIO_WEIGHTS)
+        st.caption(
+            f"Portfolio percentages are based on Berkshire Hathaway's latest disclosed 13F holdings "
+            f"as of {BUFFETT_13F_REPORT_DATE}. Click any row to load that ticker."
         )
-        if watch_df.empty:
-            st.info("No BUY-rated stocks found among today's most actively traded tickers right now.")
-        else:
-            st.caption(
-                f"Top {len(watch_df)} BUY-rated stock{'s' if len(watch_df) != 1 else ''} out of "
-                f"{len(pool_tickers)} of today's most actively traded tickers scanned. "
-                "Click any row to load that ticker directly into the chart and Options Finder."
-            )
     else:
-        tickers = CATEGORY_LISTS[category]
-        with st.spinner(f"Loading {category}..."):
-            watch_df = scan_group(tuple(tickers))
-        if category == "Warren Buffett":
-            watch_df["% of Total Portfolio"] = watch_df["Ticker"].map(BUFFETT_PORTFOLIO_WEIGHTS)
-            st.caption(
-                f"Portfolio percentages are based on Berkshire Hathaway's latest disclosed 13F holdings "
-                f"as of {BUFFETT_13F_REPORT_DATE}. Click any row to load that ticker."
-            )
-        else:
-            st.caption("Click any row to load that ticker directly into the chart and Options Finder.")
-    if not watch_df.empty:
-        watch_df = watch_df.rename(columns={"Dividend Yield %": "Div.Yield %"})
-        if "Signal" in watch_df.columns:
-            watch_df["Signal"] = watch_df["Signal"].map(normalize_signal)
-        # Show the strongest-ranked stocks first while keeping Streamlit's
-        # interactive header sorting available to the user.
-        if "Score" in watch_df.columns:
-            watch_df = watch_df.sort_values(by="Score", ascending=False, na_position="last").reset_index(drop=True)
+        st.caption("Click any row to load that ticker directly into the chart and Options Finder.")
+    watch_df = watch_df.rename(columns={"Dividend Yield %": "Div.Yield %"})
+    # Show the strongest-ranked stocks first while keeping Streamlit's
+    # interactive header sorting available to the user.
+    if "Score" in watch_df.columns:
+        watch_df = watch_df.sort_values(by="Score", ascending=False, na_position="last").reset_index(drop=True)
 
-        # Keep Score immediately after Price for every watchlist category.
-        preferred_order = ["Ticker", "Company Name"]
-        if "% of Total Portfolio" in watch_df.columns:
-            preferred_order.append("% of Total Portfolio")
-        preferred_order.extend([
-            "Price", "Score", "Original Fair Value", "Signal",
-            "P/E", "Forward EPS", "Div.Yield %", "52W Low", "52W High"
-        ])
-        remaining_columns = [col for col in watch_df.columns if col not in preferred_order]
-        watch_df = watch_df[[col for col in preferred_order if col in watch_df.columns] + remaining_columns]
-        watch_display_df = watch_df.copy()
-        watch_display_df.insert(0, "Name", watch_display_df["Ticker"])
-        watch_display_df = watch_display_df.drop(columns=["Ticker", "Company Name"], errors="ignore")
+    # Keep Score immediately after Price for every watchlist category.
+    preferred_order = ["Ticker", "Company Name"]
+    if "% of Total Portfolio" in watch_df.columns:
+        preferred_order.append("% of Total Portfolio")
+    preferred_order.extend([
+        "Price", "Score", "Original Fair Value", "Relative Fair Value", "Signal",
+        "P/E", "Forward EPS", "Div.Yield %", "52W Low", "52W High"
+    ])
+    remaining_columns = [col for col in watch_df.columns if col not in preferred_order]
+    watch_df = watch_df[[col for col in preferred_order if col in watch_df.columns] + remaining_columns]
+    watch_display_df = watch_df.copy()
+    watch_display_df.insert(0, "Symbol Company", watch_display_df["Ticker"].map(symbol_company))
+    watch_display_df = watch_display_df.drop(columns=["Ticker", "Company Name"], errors="ignore")
 
-        event = st.dataframe(
-            watch_display_df.rename(columns={"Original Fair Value":"Fair Value"}),
-            key=f"watchlist_table_{category}",
-            use_container_width=False,
-            hide_index=True,
-            on_select="rerun",
-            selection_mode="single-row",
-            column_config={
-                "Name": st.column_config.TextColumn(width=70),
-                "Price": st.column_config.NumberColumn(format="$%.2f", width=80),
-                "Score": st.column_config.NumberColumn(width=65),
-                "Fair Value": st.column_config.NumberColumn(format="$%.2f", width=95),
-                "Signal": st.column_config.TextColumn(width=75),
-                "P/E": st.column_config.NumberColumn(format="%.2f", width=65),
-                "Forward EPS": st.column_config.NumberColumn(format="%.2f", width=90),
-                "% of Total Portfolio": st.column_config.NumberColumn(format="%.2f%%", width=125),
-                "Div.Yield %": st.column_config.NumberColumn(format="%.2f%%", width=95),
-                "52W Low": st.column_config.NumberColumn(format="$%.2f", width=80),
-                "52W High": st.column_config.NumberColumn(format="$%.2f", width=80),
-            }
-        )
-        selected_rows = event.selection.rows if event and hasattr(event, "selection") else []
-        if selected_rows:
-            selected = str(watch_df.iloc[selected_rows[0]]["Ticker"]).upper().strip()
-            st.session_state.pending_watchlist_ticker = selected
-            st.rerun()
+    event = st.dataframe(
+        watch_display_df,
+        key=f"watchlist_table_{category}",
+        use_container_width=True,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        column_config={
+            "Symbol Company": st.column_config.TextColumn(width=260),
+            "Price": st.column_config.NumberColumn(format="$%.2f", width=105),
+            "Score": st.column_config.NumberColumn(width=85),
+            "Original Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
+            "Relative Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
+            "Signal": st.column_config.TextColumn(width=115),
+            "P/E": st.column_config.NumberColumn(format="%.2f", width=90),
+            "Forward EPS": st.column_config.NumberColumn(format="%.2f", width=125),
+            "% of Total Portfolio": st.column_config.NumberColumn(format="%.2f%%", width=170),
+            "Div.Yield %": st.column_config.NumberColumn(format="%.2f%%", width=125),
+            "52W Low": st.column_config.NumberColumn(format="$%.2f", width=105),
+            "52W High": st.column_config.NumberColumn(format="$%.2f", width=105),
+        }
+    )
+    selected_rows = event.selection.rows if event and hasattr(event, "selection") else []
+    if selected_rows:
+        selected = str(watch_df.iloc[selected_rows[0]]["Ticker"]).upper().strip()
+        st.session_state.pending_watchlist_ticker = selected
+        st.rerun()
 
 if active_section == "Paper Trading":
     cash_col, save_col = st.columns([4, 1])
