@@ -293,7 +293,7 @@ def symbol_company(ticker: str):
     if not symbol:
         return ""
     name = company_name(symbol)
-    return f"{symbol} {name}" if name else symbol
+    return f"{symbol} [{name}]" if name else symbol
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -744,17 +744,37 @@ def render_navigation(key_prefix="nav"):
                 st.rerun()
 
 def render_homepage():
-    st.markdown('<div class="section-title">Major markets</div><div class="section-copy"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">MAJOR MARKETS</div><div class="section-copy"></div>', unsafe_allow_html=True)
     market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
     market_cols = st.columns(6)
     for col, (label, symbol) in zip(market_cols, market_assets):
         with col:
             try:
                 mq = quick_quote(symbol)
-                delta = "" if mq["change"] is None else f'{mq["change"]:+.2f}'
-                st.metric(label, money(mq["price"]), delta)
+                change = mq["change"]
+                change_pct = mq.get("change_pct")
+                name_color = "#16a34a" if change is not None and change > 0 else "#dc2626" if change is not None and change < 0 else "#6b7280"
+                delta_text = "N/A" if change is None else f"{change:+.2f}" + (f" ({change_pct:+.2f}%)" if change_pct is not None else "")
+                st.markdown(
+                    f"""
+                    <div style="padding:.55rem .65rem;border:1px solid rgba(128,128,128,.20);border-radius:12px;min-height:108px">
+                      <div style="font-size:.78rem;font-weight:800;color:{name_color};line-height:1.15;min-height:2rem">{label.upper()}</div>
+                      <div style="font-size:1.12rem;font-weight:800;margin-top:.2rem">{money(mq['price'])}</div>
+                      <div style="font-size:.76rem;margin-top:.15rem;color:{name_color};font-weight:700">{delta_text}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
             except Exception:
-                st.metric(label, "Unavailable")
+                st.markdown(
+                    f"""
+                    <div style="padding:.55rem .65rem;border:1px solid rgba(128,128,128,.20);border-radius:12px;min-height:108px">
+                      <div style="font-size:.78rem;font-weight:800;color:#6b7280;line-height:1.15;min-height:2rem">{label.upper()}</div>
+                      <div style="font-size:.95rem;font-weight:700;margin-top:.35rem">Unavailable</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
     st.markdown("""
     <section class="hero">
@@ -928,7 +948,7 @@ if active_section == "Price vs EPS":
             mpe = float(pe_text) if pe_text.strip() else None
             with st.spinner(f"Loading {ticker}..."):
                 v = valuation(ticker, mg, mpe)
-            st.markdown(f"### {v['Company Name']} ({v['Ticker']})")
+            st.markdown(f"### {symbol_company(v['Ticker'])}")
             cols = st.columns(6)
             metrics = [
                 ("Price", v["Price"], "$"), ("Original FV", v["Original Fair Value"], "$"),
