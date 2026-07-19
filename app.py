@@ -213,6 +213,12 @@ def sf(value):
         return None
 
 
+def normalize_signal(value):
+    """Use BUY instead of BUY everywhere in the application."""
+    signal = str(value or "").strip().upper()
+    return "BUY" if signal == "BUY" else value
+
+
 @st.cache_data(ttl=900, show_spinner=False)
 def get_info(ticker: str):
     t = yf.Ticker(ticker)
@@ -377,7 +383,7 @@ def valuation(ticker: str, manual_growth=None, manual_pe=None):
 
     return {
         "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Original Fair Value": original,
-        "Relative Fair Value": relative, "Score": score, "Signal": signal,
+        "Relative Fair Value": relative, "Score": score, "Signal": normalize_signal(signal),
         "P/E": pe, "Trailing EPS": trailing, "Forward EPS": forward,
         "EPS Growth %": growth, "Annual Dividend": annual_div,
         "Dividend Yield %": div_yield, "52W Low": low52, "52W High": high52,
@@ -398,7 +404,10 @@ def scan_group(tickers_tuple):
             ]})
         except Exception:
             rows.append({"Ticker": ticker, "Company Name": company_name(ticker), "Signal": "DATA ERROR"})
-    return pd.DataFrame(rows)
+    result = pd.DataFrame(rows)
+    if "Signal" in result.columns:
+        result["Signal"] = result["Signal"].map(normalize_signal)
+    return result
 
 
 def calculate_rsi(close: pd.Series, periods=14):
@@ -953,7 +962,7 @@ if active_section == "Price vs EPS":
             metrics = [
                 ("Price", v["Price"], "$"), ("Original FV", v["Original Fair Value"], "$"),
                 ("Relative FV", v["Relative Fair Value"], "$"), ("Score", v["Score"], ""),
-                ("Signal", v["Signal"], ""), ("Dividend Yield", v["Dividend Yield %"], "%"),
+                ("Signal", normalize_signal(v["Signal"]), ""), ("Dividend Yield", v["Dividend Yield %"], "%"),
             ]
             for c, (label, value, unit) in zip(cols, metrics):
                 if isinstance(value, (int, float)) and value is not None:
@@ -1017,6 +1026,8 @@ if active_section == "Watchlists":
     else:
         st.caption("Click any row to load that ticker directly into the chart and Options Finder.")
     watch_df = watch_df.rename(columns={"Dividend Yield %": "Div.Yield %"})
+    if "Signal" in watch_df.columns:
+        watch_df["Signal"] = watch_df["Signal"].map(normalize_signal)
     # Show the strongest-ranked stocks first while keeping Streamlit's
     # interactive header sorting available to the user.
     if "Score" in watch_df.columns:
