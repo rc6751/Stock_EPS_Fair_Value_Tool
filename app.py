@@ -96,6 +96,7 @@ st.markdown("""
 <style>
 :root { --ink:#0a1630; --blue:#2563eb; --cyan:#22d3ee; --panel:#101d3d; }
 .block-container {padding-top: 1rem; padding-bottom: 2rem; max-width: 100%;}
+.stApp {background:linear-gradient(180deg,#e8fbe8 0%,#d8f5d8 100%);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Ctext x='20' y='80' font-size='48' fill='rgba(0,128,0,0.08)'%3E$%3C/text%3E%3C/svg%3E");}
 div[data-testid="stHorizontalBlock"] > div {min-width: 0;}
 div.stButton > button {
     min-height: 3.15rem; font-size: 1rem; font-weight: 750; border-radius: 10px;
@@ -126,11 +127,11 @@ div.stButton > button {
 .brandtag {font-size:.78rem;opacity:.7;}
 .hero {
   position:relative; overflow:hidden; min-height:340px; border-radius:24px; padding:42px 50px 24px;
-  background:linear-gradient(135deg,#dff8df 0%,#c9f2c9 55%,#b6ebb6 100%);
+  background:linear-gradient(135deg,#071226 0%,#102451 52%,#0a3a5e 100%);
   color:white; box-shadow:0 24px 70px rgba(4,18,48,.22); margin:8px 0 12px;
 }
 .hero:before {content:"";position:absolute;width:480px;height:480px;border-radius:50%;right:-120px;top:-190px;background:radial-gradient(circle,rgba(34,211,238,.35),rgba(37,99,235,0));}
-.hero:after {content:"$   $    $    $   $    $   $";position:absolute;inset:0;color:rgba(34,139,34,.10);font-size:64px;font-weight:800;letter-spacing:36px;line-height:120px;white-space:pre-wrap;overflow:hidden;pointer-events:none;}
+.hero:after {content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(to right,transparent 0%,black 55%);}
 .hero-copy {position:relative;z-index:2;max-width:720px;padding-top:8px;padding-right:250px;}
 .eyebrow {display:inline-block;padding:7px 12px;border:1px solid rgba(255,255,255,.22);border-radius:999px;background:rgba(255,255,255,.08);font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;}
 .hero h1 {font-size:4rem;line-height:1.02;letter-spacing:-.055em;margin:22px 0 18px;max-width:740px;}
