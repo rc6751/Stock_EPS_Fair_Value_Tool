@@ -373,7 +373,7 @@ def valuation(ticker: str, manual_growth=None, manual_pe=None):
     if growth is not None:
         score += max(-10, min(10, growth / 3))
     score = int(max(0, min(100, round(score))))
-    signal = "STRONG BUY" if score >= 80 else "BUY" if score >= 65 else "HOLD" if score >= 45 else "SELL"
+    signal = "BUY" if score >= 65 else "HOLD" if score >= 45 else "SELL"
 
     return {
         "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Original Fair Value": original,
