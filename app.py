@@ -532,8 +532,8 @@ def valuation(ticker: str, manual_growth=None, manual_pe=None):
     signal = signal_from_value_and_timing(current, original, timing_score)
 
     return {
-        "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Original Fair Value": original,
-        "Timing Score": timing_score, "Signal": normalize_signal(signal),
+        "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Fair Value": original,
+        "Score": timing_score, "Signal": normalize_signal(signal),
         "P/E": pe, "Trailing EPS": trailing, "Forward EPS": forward,
         "EPS Growth %": growth, "Annual Dividend": annual_div,
         "Dividend Yield %": div_yield, "52W Low": low52, "52W High": high52,
@@ -549,7 +549,7 @@ def scan_group(tickers_tuple):
         try:
             v = valuation(ticker)
             rows.append({k: v[k] for k in [
-                "Ticker", "Company Name", "Price", "Original Fair Value", "Timing Score", "Signal",
+                "Ticker", "Company Name", "Price", "Fair Value", "Score", "Signal",
                 "P/E", "Forward EPS", "Dividend Yield %", "52W Low", "52W High"
             ]})
         except Exception:
@@ -1285,8 +1285,8 @@ if active_section == "Watchlists":
             column_config={
                 "Symbol": st.column_config.TextColumn(width=100),
                 "Price": st.column_config.NumberColumn(format="$%.2f", width=105),
-                "Timing Score": st.column_config.NumberColumn(format="%d", width=110),
-                "Original Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
+                "Score": st.column_config.NumberColumn(format="%d", width=110),
+                "Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
                 "Signal": st.column_config.TextColumn(width=115),
                 "P/E": st.column_config.NumberColumn(format="%.2f", width=90),
                 "Forward EPS": st.column_config.NumberColumn(format="%.2f", width=125),
