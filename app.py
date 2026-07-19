@@ -1143,7 +1143,7 @@ if active_section == "Watchlists":
         watch_display_df = watch_display_df.drop(columns=["Ticker", "Company Name"], errors="ignore")
 
         event = st.dataframe(
-            watch_display_df,
+            watch_display_df.rename(columns={"Original Fair Value":"Fair Value"}),
             key=f"watchlist_table_{category}",
             use_container_width=True,
             hide_index=True,
@@ -1153,7 +1153,7 @@ if active_section == "Watchlists":
                 "Name": st.column_config.TextColumn(width=120),
                 "Price": st.column_config.NumberColumn(format="$%.2f", width=105),
                 "Score": st.column_config.NumberColumn(width=85),
-                "Original Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
+                "Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
                 "Signal": st.column_config.TextColumn(width=115),
                 "P/E": st.column_config.NumberColumn(format="%.2f", width=90),
                 "Forward EPS": st.column_config.NumberColumn(format="%.2f", width=125),
