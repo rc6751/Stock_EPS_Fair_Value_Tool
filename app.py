@@ -545,7 +545,7 @@ def valuation(ticker: str, manual_growth=None, manual_pe=None):
 
     return {
         "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Original Fair Value": original,
-        "Score": timing_score, "Score": latest_rsi, "Signal": normalize_signal(signal),
+        "Score": timing_score, "Signal": normalize_signal(signal),
         "P/E": pe, "Trailing EPS": trailing, "Forward EPS": forward,
         "EPS Growth %": growth, "Annual Dividend": annual_div,
         "Dividend Yield %": div_yield, "52W Low": low52, "52W High": high52,
