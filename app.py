@@ -1183,6 +1183,7 @@ if active_section == "Watchlists":
     }
     </style>
     """, unsafe_allow_html=True)
+
     category_names = ["Most Active", "Top Buys"] + list(CATEGORY_LISTS)
     with st.container(key="watchlist_tabs"):
         category_cols = st.columns(len(category_names), gap="small")
@@ -1196,13 +1197,18 @@ if active_section == "Watchlists":
                 ):
                     st.session_state.watchlist_category = category_name
                     st.rerun()
+
     category = st.session_state.watchlist_category
+
     if category == "Most Active":
         with st.spinner("Loading most actively traded stocks..."):
             tickers = [row["ticker"] for row in most_active_quotes()]
         with st.spinner(f"Loading {category}..."):
             watch_df = scan_group(tuple(tickers))
-        st.caption("Ranked by reported trading volume. Click any row to load that ticker directly into the chart and Options Finder.")
+        st.caption(
+            "Ranked by reported trading volume. Click any row to load that ticker "
+            "directly into the chart and Options Finder."
+        )
     elif category == "Top Buys":
         with st.spinner("Scanning today's most actively traded stocks for BUY signals..."):
             pool_tickers = most_active_symbols(count=100)
@@ -1233,28 +1239,41 @@ if active_section == "Watchlists":
             )
         else:
             st.caption("Click any row to load that ticker directly into the chart and Options Finder.")
+
     if not watch_df.empty:
         watch_df = watch_df.rename(columns={"Dividend Yield %": "Div.Yield %"})
         if "Signal" in watch_df.columns:
             watch_df["Signal"] = watch_df["Signal"].map(normalize_signal)
-        # Show the strongest-ranked stocks first while keeping Streamlit's
-        # interactive header sorting available to the user.
         if "Timing Score" in watch_df.columns:
-            watch_df = watch_df.sort_values(by="Timing Score", ascending=False, na_position="last").reset_index(drop=True)
+            watch_df = watch_df.sort_values(
+                by="Timing Score",
+                ascending=False,
+                na_position="last",
+            ).reset_index(drop=True)
 
-        # Keep Score immediately after Price for every watchlist category.
-        preferred_order = ["Ticker", "Company Name"]
+        # The Watchlists display uses the stock symbol only. Company names are
+        # intentionally excluded from every category and dropdown result.
+        display_order = ["Ticker"]
         if "% of Total Portfolio" in watch_df.columns:
-            preferred_order.append("% of Total Portfolio")
-        preferred_order.extend([
-            "Price", "Timing Score", "Original Fair Value", "Signal",
-            "P/E", "Forward EPS", "Div.Yield %", "52W Low", "52W High"
+            display_order.append("% of Total Portfolio")
+        display_order.extend([
+            "Price",
+            "Timing Score",
+            "Original Fair Value",
+            "Signal",
+            "P/E",
+            "Forward EPS",
+            "Div.Yield %",
+            "52W Low",
+            "52W High",
         ])
-        remaining_columns = [col for col in watch_df.columns if col not in preferred_order]
-        watch_df = watch_df[[col for col in preferred_order if col in watch_df.columns] + remaining_columns]
-        watch_display_df = watch_df.copy()
-        watch_display_df.insert(0, "Symbol Company", watch_display_df["Ticker"].map(symbol_company))
-        watch_display_df = watch_display_df.drop(columns=["Ticker", "Company Name"], errors="ignore")
+
+        watch_display_df = watch_df.drop(columns=["Company Name"], errors="ignore").copy()
+        remaining_columns = [col for col in watch_display_df.columns if col not in display_order]
+        watch_display_df = watch_display_df[
+            [col for col in display_order if col in watch_display_df.columns] + remaining_columns
+        ]
+        watch_display_df = watch_display_df.rename(columns={"Ticker": "Symbol"})
 
         event = st.dataframe(
             watch_display_df,
@@ -1264,7 +1283,7 @@ if active_section == "Watchlists":
             on_select="rerun",
             selection_mode="single-row",
             column_config={
-                "Symbol Company": st.column_config.TextColumn(width=260),
+                "Symbol": st.column_config.TextColumn(width=100),
                 "Price": st.column_config.NumberColumn(format="$%.2f", width=105),
                 "Timing Score": st.column_config.NumberColumn(format="%d", width=110),
                 "Original Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
@@ -1275,11 +1294,12 @@ if active_section == "Watchlists":
                 "Div.Yield %": st.column_config.NumberColumn(format="%.2f%%", width=125),
                 "52W Low": st.column_config.NumberColumn(format="$%.2f", width=105),
                 "52W High": st.column_config.NumberColumn(format="$%.2f", width=105),
-            }
+            },
         )
+
         selected_rows = event.selection.rows if event and hasattr(event, "selection") else []
         if selected_rows:
-            selected = str(watch_df.iloc[selected_rows[0]]["Ticker"]).upper().strip()
+            selected = str(watch_display_df.iloc[selected_rows[0]]["Symbol"]).upper().strip()
             st.session_state.pending_watchlist_ticker = selected
             st.rerun()
 
