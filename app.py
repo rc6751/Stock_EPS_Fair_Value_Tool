@@ -1139,7 +1139,7 @@ if active_section == "Watchlists":
         remaining_columns = [col for col in watch_df.columns if col not in preferred_order]
         watch_df = watch_df[[col for col in preferred_order if col in watch_df.columns] + remaining_columns]
         watch_display_df = watch_df.copy()
-        watch_display_df.insert(0, "Symbol Company", watch_display_df["Ticker"].map(symbol_company))
+        watch_display_df.insert(0, "Name", watch_display_df["Ticker"])
         watch_display_df = watch_display_df.drop(columns=["Ticker", "Company Name"], errors="ignore")
 
         event = st.dataframe(
@@ -1150,7 +1150,7 @@ if active_section == "Watchlists":
             on_select="rerun",
             selection_mode="single-row",
             column_config={
-                "Symbol Company": st.column_config.TextColumn(width=260),
+                "Name": st.column_config.TextColumn(width=120),
                 "Price": st.column_config.NumberColumn(format="$%.2f", width=105),
                 "Score": st.column_config.NumberColumn(width=85),
                 "Original Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
