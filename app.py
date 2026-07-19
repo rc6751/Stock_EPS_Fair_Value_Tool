@@ -96,7 +96,6 @@ st.markdown("""
 <style>
 :root { --ink:#0a1630; --blue:#2563eb; --cyan:#22d3ee; --panel:#101d3d; }
 .block-container {padding-top: 1rem; padding-bottom: 2rem; max-width: 100%;}
-.stApp {background:linear-gradient(180deg,#e8fbe8 0%,#d8f5d8 100%);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Ctext x='20' y='80' font-size='48' fill='rgba(0,128,0,0.08)'%3E$%3C/text%3E%3C/svg%3E");}
 div[data-testid="stHorizontalBlock"] > div {min-width: 0;}
 div.stButton > button {
     min-height: 3.15rem; font-size: 1rem; font-weight: 750; border-radius: 10px;
@@ -805,6 +804,21 @@ def render_navigation(key_prefix="nav"):
                 st.rerun()
 
 def render_homepage():
+
+    st.markdown("""
+    <style>
+    /* Home-page-only finance wallpaper. This style exists only while Home renders. */
+    [data-testid="stMain"] {
+        background:
+            linear-gradient(rgba(241, 252, 243, 0.94), rgba(231, 248, 235, 0.96)),
+            url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Ctext x='24' y='112' font-family='Arial,sans-serif' font-size='74' font-weight='700' fill='%23166534' fill-opacity='.035'%3E%24%3C/text%3E%3C/svg%3E");
+        background-attachment: fixed;
+    }
+    [data-testid="stMainBlockContainer"] {
+        background: transparent;
+    }
+    </style>
+    """, unsafe_allow_html=True)
     st.markdown('<div class="section-title">MAJOR MARKETS</div><div class="section-copy"></div>', unsafe_allow_html=True)
     market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
     market_cols = st.columns(6)
