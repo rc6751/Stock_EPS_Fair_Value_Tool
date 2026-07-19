@@ -508,7 +508,7 @@ def chart_figure(ticker, v, history_months):
     if original_fv:
         fig.add_hline(
             y=original_fv, line_dash="dash", line_width=3,
-            annotation_text=f"Original FV ${original_fv:,.2f}",
+            annotation_text=f"Fair Value ${original_fv:,.2f}",
             annotation_position="right", row=1, col=1
         )
 
