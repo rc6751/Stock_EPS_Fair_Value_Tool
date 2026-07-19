@@ -221,23 +221,6 @@ BUFFETT_PORTFOLIO_WEIGHTS = {
     "JEF": 0.01
 }
 
-SECTOR_PE_DEFAULTS = {
-    "Technology": 30.0, "Communication Services": 24.0,
-    "Consumer Cyclical": 24.0, "Consumer Defensive": 22.0,
-    "Financial Services": 14.0, "Healthcare": 22.0,
-    "Industrials": 20.0, "Energy": 12.0, "Utilities": 18.0,
-    "Real Estate": 18.0, "Basic Materials": 16.0, "Unknown": 20.0,
-}
-INDUSTRY_PE_OVERRIDES = {
-    "Semiconductors": 35.0, "Semiconductor Equipment & Materials": 30.0,
-    "Software - Infrastructure": 30.0, "Software - Application": 30.0,
-    "Internet Content & Information": 28.0, "Banks - Diversified": 13.0,
-    "Banks - Regional": 12.0, "Oil & Gas Integrated": 12.0,
-    "Oil & Gas E&P": 11.0, "Drug Manufacturers - General": 20.0,
-    "Medical Devices": 24.0, "REIT - Retail": 17.0, "REIT - Industrial": 20.0,
-}
-
-
 def init_db():
     with sqlite3.connect(DB_PATH) as con:
         con.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
@@ -423,10 +406,6 @@ def valuation(ticker: str, manual_growth=None, manual_pe=None):
 
     sector = info.get("sector") or "Unknown"
     industry = info.get("industry") or "Unknown"
-    relative_pe = INDUSTRY_PE_OVERRIDES.get(industry, SECTOR_PE_DEFAULTS.get(sector, 20.0))
-    relative_eps = forward if forward and forward > 0 else trailing
-    relative = relative_eps * relative_pe if relative_eps and relative_eps > 0 else None
-
     annual_div = sf(info.get("dividendRate")) or 0.0
     div_yield = annual_div / current * 100 if current else 0.0
     low52 = sf(info.get("fiftyTwoWeekLow"))
@@ -443,11 +422,11 @@ def valuation(ticker: str, manual_growth=None, manual_pe=None):
 
     return {
         "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Original Fair Value": original,
-        "Relative Fair Value": relative, "Score": score, "Signal": normalize_signal(signal),
+        "Score": score, "Signal": normalize_signal(signal),
         "P/E": pe, "Trailing EPS": trailing, "Forward EPS": forward,
         "EPS Growth %": growth, "Annual Dividend": annual_div,
         "Dividend Yield %": div_yield, "52W Low": low52, "52W High": high52,
-        "Sector": sector, "Industry": industry, "Relative P/E": relative_pe,
+        "Sector": sector, "Industry": industry,
         "Methods": methods, "Quarterly EPS": q,
     }
 
@@ -459,7 +438,7 @@ def scan_group(tickers_tuple):
         try:
             v = valuation(ticker)
             rows.append({k: v[k] for k in [
-                "Ticker", "Company Name", "Price", "Original Fair Value", "Relative Fair Value", "Score", "Signal",
+                "Ticker", "Company Name", "Price", "Original Fair Value", "Score", "Signal",
                 "P/E", "Forward EPS", "Dividend Yield %", "52W Low", "52W High"
             ]})
         except Exception:
@@ -526,27 +505,12 @@ def chart_figure(ticker, v, history_months):
     )
 
     original_fv = sf(v.get("Original Fair Value"))
-    relative_fv = sf(v.get("Relative Fair Value"))
-
-    # Keep Relative FV off the chart when it is an outlier versus Original FV.
-    # A 30% maximum difference keeps the price scale useful while preserving
-    # the underlying Relative FV calculation elsewhere in the app.
-    relative_fv_for_chart = None
-    if original_fv and original_fv > 0 and relative_fv and relative_fv > 0:
-        relative_gap_pct = abs(relative_fv - original_fv) / original_fv
-        if relative_gap_pct <= 0.30:
-            relative_fv_for_chart = relative_fv
-
-    for label, value, dash in [
-        ("Original FV", original_fv, "dash"),
-        ("Relative FV", relative_fv_for_chart, "dot"),
-    ]:
-        if value:
-            fig.add_hline(
-                y=value, line_dash=dash, line_width=3,
-                annotation_text=f"{label} ${value:,.2f}",
-                annotation_position="right", row=1, col=1
-            )
+    if original_fv:
+        fig.add_hline(
+            y=original_fv, line_dash="dash", line_width=3,
+            annotation_text=f"Original FV ${original_fv:,.2f}",
+            annotation_position="right", row=1, col=1
+        )
 
     # Make RSI visually distinct with momentum zones and a prominent live reading.
     fig.add_hrect(
@@ -585,7 +549,7 @@ def chart_figure(ticker, v, history_months):
         ), row=2, col=1)
 
     values = pd.concat([close.loc[df.index], upper, lower]).dropna()
-    extras = [x for x in (original_fv, relative_fv_for_chart) if x]
+    extras = [original_fv] if original_fv else []
     if not values.empty:
         ymin = min([values.min()] + extras)
         ymax = max([values.max()] + extras)
@@ -614,7 +578,7 @@ def chart_figure(ticker, v, history_months):
         gridcolor="rgba(128,128,128,0.18)", title_text="RSI"
     )
     fig.update_layout(
-        title=f"{ticker} {v.get('Company Name', ticker)} — Price, Bollinger Bands, Fair Values and RSI",
+        title=f"{ticker} {v.get('Company Name', ticker)} — Price, Bollinger Bands, Fair Value and RSI",
         height=1120, xaxis_rangeslider_visible=False, hovermode="x unified",
         dragmode="zoom",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
@@ -1051,12 +1015,12 @@ if active_section == "Price vs EPS":
             with st.spinner(f"Loading {ticker}..."):
                 v = valuation(ticker, mg, mpe)
             st.markdown(f"### {symbol_company(v['Ticker'])}")
-            cols = st.columns(6)
             metrics = [
                 ("Price", v["Price"], "$"), ("Original FV", v["Original Fair Value"], "$"),
-                ("Relative FV", v["Relative Fair Value"], "$"), ("Score", v["Score"], ""),
-                ("Signal", normalize_signal(v["Signal"]), ""), ("Dividend Yield", v["Dividend Yield %"], "%"),
+                ("Score", v["Score"], ""), ("Signal", normalize_signal(v["Signal"]), ""),
+                ("Dividend Yield", v["Dividend Yield %"], "%"),
             ]
+            cols = st.columns(len(metrics))
             for c, (label, value, unit) in zip(cols, metrics):
                 if isinstance(value, (int, float)) and value is not None:
                     text = f"${value:,.2f}" if unit == "$" else f"{value:,.2f}%" if unit == "%" else f"{value}"
@@ -1082,8 +1046,8 @@ if active_section == "Price vs EPS":
             with right:
                 st.subheader("Fundamentals")
                 fundamentals = pd.DataFrame({
-                    "Metric": ["Sector", "Industry", "Trailing EPS", "Forward EPS", "P/E used", "EPS Growth", "Relative P/E"],
-                    "Value": [v["Sector"], v["Industry"], v["Trailing EPS"], v["Forward EPS"], v["P/E"], v["EPS Growth %"], v["Relative P/E"]]
+                    "Metric": ["Sector", "Industry", "Trailing EPS", "Forward EPS", "P/E used", "EPS Growth"],
+                    "Value": [v["Sector"], v["Industry"], v["Trailing EPS"], v["Forward EPS"], v["P/E"], v["EPS Growth %"]]
                 })
                 st.dataframe(fundamentals, use_container_width=True, hide_index=True)
         except Exception as exc:
@@ -1169,7 +1133,7 @@ if active_section == "Watchlists":
         if "% of Total Portfolio" in watch_df.columns:
             preferred_order.append("% of Total Portfolio")
         preferred_order.extend([
-            "Price", "Score", "Original Fair Value", "Relative Fair Value", "Signal",
+            "Price", "Score", "Original Fair Value", "Signal",
             "P/E", "Forward EPS", "Div.Yield %", "52W Low", "52W High"
         ])
         remaining_columns = [col for col in watch_df.columns if col not in preferred_order]
@@ -1190,7 +1154,6 @@ if active_section == "Watchlists":
                 "Price": st.column_config.NumberColumn(format="$%.2f", width=105),
                 "Score": st.column_config.NumberColumn(width=85),
                 "Original Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
-                "Relative Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
                 "Signal": st.column_config.TextColumn(width=115),
                 "P/E": st.column_config.NumberColumn(format="%.2f", width=90),
                 "Forward EPS": st.column_config.NumberColumn(format="%.2f", width=125),
