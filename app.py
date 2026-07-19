@@ -1094,18 +1094,30 @@ if active_section == "Price vs EPS":
 if active_section == "Watchlists":
     st.session_state.setdefault("watchlist_category", "Most Active")
     st.subheader("Watchlists")
+    st.markdown("""
+    <style>
+    .st-key-watchlist_tabs div[data-testid="stButton"] > button {
+        min-height: 2.1rem;
+        padding: .25rem .4rem;
+        font-size: .74rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+    </style>
+    """, unsafe_allow_html=True)
     category_names = ["Most Active", "Top Buys"] + list(CATEGORY_LISTS)
-    category_cols = st.columns(len(category_names), gap="small")
-    for category_col, category_name in zip(category_cols, category_names):
-        with category_col:
-            if st.button(
-                category_name,
-                key=f"watchlist_{category_name}",
-                use_container_width=True,
-                type="primary" if st.session_state.watchlist_category == category_name else "secondary",
-            ):
-                st.session_state.watchlist_category = category_name
-                st.rerun()
+    with st.container(key="watchlist_tabs"):
+        category_cols = st.columns(len(category_names), gap="small")
+        for category_col, category_name in zip(category_cols, category_names):
+            with category_col:
+                if st.button(
+                    category_name,
+                    key=f"watchlist_{category_name}",
+                    use_container_width=True,
+                    type="primary" if st.session_state.watchlist_category == category_name else "secondary",
+                ):
+                    st.session_state.watchlist_category = category_name
+                    st.rerun()
     category = st.session_state.watchlist_category
     if category == "Most Active":
         with st.spinner("Loading most actively traded stocks..."):
