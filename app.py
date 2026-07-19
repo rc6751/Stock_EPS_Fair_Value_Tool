@@ -1016,7 +1016,7 @@ if active_section == "Price vs EPS":
                 v = valuation(ticker, mg, mpe)
             st.markdown(f"### {symbol_company(v['Ticker'])}")
             metrics = [
-                ("Price", v["Price"], "$"), ("Original FV", v["Original Fair Value"], "$"),
+                ("Price", v["Price"], "$"), ("Fair Value", v["Original Fair Value"], "$"),
                 ("Score", v["Score"], ""), ("Signal", normalize_signal(v["Signal"]), ""),
                 ("Dividend Yield", v["Dividend Yield %"], "%"),
             ]
