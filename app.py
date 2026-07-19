@@ -837,6 +837,9 @@ def render_homepage():
                     unsafe_allow_html=True,
                 )
 
+    # Existing application navigation directly under Major Markets.
+    render_navigation("home_nav")
+
     st.markdown("""
     <style>
     .trial-shell {background:linear-gradient(180deg,#061426 0%,#071a31 100%);padding:1rem;border-radius:20px;color:#f8fafc;border:1px solid rgba(96,165,250,.22)}
@@ -951,15 +954,6 @@ def render_homepage():
             )
             st.plotly_chart(fig, use_container_width=True, config={"displaylogo":False})
 
-        st.markdown("""
-        <div class="trial-footer-grid">
-          <div class="trial-feature"><div class="trial-feature-icon">🛡️</div><div><b>EPS-Based Valuation</b><span>Multiple valuation methods already built into the application.</span></div></div>
-          <div class="trial-feature"><div class="trial-feature-icon">✓</div><div><b>Comprehensive Analysis</b><span>Valuation, watchlists, options, backtesting, and paper trading.</span></div></div>
-          <div class="trial-feature"><div class="trial-feature-icon">🔒</div><div><b>Local Portfolio Data</b><span>Paper-trading records remain stored in the application's database.</span></div></div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        render_navigation("home_nav")
         if st.button(f"Analyze {symbol} in Full Dashboard →", type="primary", key="trial_full_analysis"):
             st.session_state.selected_ticker = symbol
             st.session_state.options_ticker = symbol
@@ -967,7 +961,6 @@ def render_homepage():
             st.rerun()
     except Exception as exc:
         st.error(f"Dashboard data unavailable for {symbol}: {exc}")
-        render_navigation("home_nav")
 
 
 init_db()
