@@ -14,36 +14,83 @@ import yfinance as yf
 
 st.set_page_config(page_title="Stock_EPS_Fair_Value_Tool", page_icon="📈", layout="wide")
 
-# Scroll to the top only after the user changes sections.
-# Ordinary widget reruns, including Get Quote, keep the current page position.
-def request_scroll_to_top():
-    st.session_state["_scroll_to_top"] = True
+# Keep the app at the top after an initial load or Streamlit rerun.
+# NOTE: components.html() only re-executes its embedded <script> when the
+# HTML content actually changes between reruns. A static string here means
+# the scroll-to-top only fires once (the very first load) — on every
+# subsequent rerun (e.g. clicking a nav button to switch sections) the
+# iframe content is unchanged, so the script never re-fires and the browser
+# keeps whatever scroll position it had, which can land near the bottom of
+# the newly rendered (often differently-sized) page. Embedding a per-rerun
+# nonce forces the component to remount every time, so the scroll script
+# always runs on navigation. A few staggered retries also catch content
+# (like live quote data) that finishes loading and shifts page height after
+# the initial paint.
+import uuid as _uuid
+_scroll_nonce = _uuid.uuid4().hex
+components.html(
+    f"""<script>
+    (function() {{
+        const doc = window.parent.document;
+        const win = window.parent;
+        const selectors = [
+            '[data-testid="stAppViewContainer"]',
+            '[data-testid="stMain"]',
+            '[data-testid="stAppViewBlockContainer"]',
+            'section.main',
+            '.main',
+        ];
+        let active = true;
 
-
-def apply_requested_scroll():
-    if not st.session_state.pop("_scroll_to_top", False):
-        return
-    components.html(
-        """
-        <script>
-        (function () {
-            const win = window.parent;
-            const doc = win.document;
-            win.requestAnimationFrame(() => {
-                win.scrollTo({top: 0, left: 0, behavior: "instant"});
+        const scrollTop = () => {{
+            if (!active) return;
+            try {{
+                win.scrollTo({{top: 0, left: 0, behavior: 'instant'}});
                 doc.documentElement.scrollTop = 0;
                 doc.body.scrollTop = 0;
-                const main = doc.querySelector('[data-testid="stAppViewContainer"]');
-                if (main) main.scrollTop = 0;
-            });
-        })();
-        </script>
-        """,
-        height=0,
-    )
+                selectors.forEach((sel) => {{
+                    const el = doc.querySelector(sel);
+                    if (el) el.scrollTop = 0;
+                }});
+            }} catch (e) {{}}
+        }};
 
+        const stop = () => {{
+            active = false;
+            try {{ win.clearInterval(interval); }} catch (e) {{}}
+            try {{ observer.disconnect(); }} catch (e) {{}}
+        }};
 
-apply_requested_scroll()
+        // Any real user scroll intent permanently cancels the auto-scroll
+        // for this render, so it never fights manual scrolling.
+        const userInputEvents = ['wheel', 'touchmove', 'keydown', 'mousedown'];
+        userInputEvents.forEach((evt) => {{
+            try {{ doc.addEventListener(evt, stop, {{ once: true, passive: true }}); }} catch (e) {{}}
+        }});
+
+        scrollTop();
+
+        // Keep re-applying briefly in case late content (e.g. live quotes)
+        // finishes loading and shifts page height after the initial paint —
+        // but only until the user actually tries to scroll.
+        let ticks = 0;
+        const interval = win.setInterval(() => {{
+            scrollTop();
+            ticks += 1;
+            if (ticks > 8) stop();
+        }}, 150);
+
+        let observer;
+        try {{
+            observer = new MutationObserver(() => scrollTop());
+            observer.observe(doc.body, {{childList: true, subtree: true}});
+            win.setTimeout(stop, 1200);
+        }} catch (e) {{}}
+    }})();
+    </script>
+    <!-- nonce: {_scroll_nonce} -->""",
+    height=0,
+)
 
 st.markdown("""
 <style>
@@ -461,7 +508,7 @@ def chart_figure(ticker, v, history_months):
     if original_fv:
         fig.add_hline(
             y=original_fv, line_dash="dash", line_width=3,
-            annotation_text=f"Fair Value ${original_fv:,.2f}",
+            annotation_text=f"Original FV ${original_fv:,.2f}",
             annotation_position="right", row=1, col=1
         )
 
@@ -754,27 +801,9 @@ def render_navigation(key_prefix="nav"):
                 type="primary" if st.session_state.active_section == section_name else "secondary",
             ):
                 st.session_state.active_section = section_name
-                request_scroll_to_top()
                 st.rerun()
 
 def render_homepage():
-    st.markdown(
-        """
-        <style>
-        [data-testid="stMain"] {
-            background-color: #eef9f0;
-            background-image:
-                linear-gradient(rgba(238, 249, 240, .94), rgba(238, 249, 240, .94)),
-                radial-gradient(circle at 50% 50%, rgba(22, 101, 52, .055) 0 2px, transparent 2.5px);
-            background-size: auto, 34px 34px;
-        }
-        [data-testid="stMainBlockContainer"] {
-            background: transparent;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
     st.markdown('<div class="section-title">MAJOR MARKETS</div><div class="section-copy"></div>', unsafe_allow_html=True)
     market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
     market_cols = st.columns(6)
@@ -987,7 +1016,7 @@ if active_section == "Price vs EPS":
                 v = valuation(ticker, mg, mpe)
             st.markdown(f"### {symbol_company(v['Ticker'])}")
             metrics = [
-                ("Price", v["Price"], "$"), ("Fair Value", v["Original Fair Value"], "$"),
+                ("Price", v["Price"], "$"), ("Original FV", v["Original Fair Value"], "$"),
                 ("Score", v["Score"], ""), ("Signal", normalize_signal(v["Signal"]), ""),
                 ("Dividend Yield", v["Dividend Yield %"], "%"),
             ]
@@ -1110,28 +1139,28 @@ if active_section == "Watchlists":
         remaining_columns = [col for col in watch_df.columns if col not in preferred_order]
         watch_df = watch_df[[col for col in preferred_order if col in watch_df.columns] + remaining_columns]
         watch_display_df = watch_df.copy()
-        watch_display_df.insert(0, "Name", watch_display_df["Ticker"])
+        watch_display_df.insert(0, "Symbol Company", watch_display_df["Ticker"].map(symbol_company))
         watch_display_df = watch_display_df.drop(columns=["Ticker", "Company Name"], errors="ignore")
 
         event = st.dataframe(
-            watch_display_df.rename(columns={"Original Fair Value":"Fair Value"}),
+            watch_display_df,
             key=f"watchlist_table_{category}",
-            use_container_width=False,
+            use_container_width=True,
             hide_index=True,
             on_select="rerun",
             selection_mode="single-row",
             column_config={
-                "Name": st.column_config.TextColumn(width=70),
-                "Price": st.column_config.NumberColumn(format="$%.2f", width=80),
-                "Score": st.column_config.NumberColumn(width=65),
-                "Fair Value": st.column_config.NumberColumn(format="$%.2f", width=95),
-                "Signal": st.column_config.TextColumn(width=75),
-                "P/E": st.column_config.NumberColumn(format="%.2f", width=65),
-                "Forward EPS": st.column_config.NumberColumn(format="%.2f", width=90),
-                "% of Total Portfolio": st.column_config.NumberColumn(format="%.2f%%", width=125),
-                "Div.Yield %": st.column_config.NumberColumn(format="%.2f%%", width=95),
-                "52W Low": st.column_config.NumberColumn(format="$%.2f", width=80),
-                "52W High": st.column_config.NumberColumn(format="$%.2f", width=80),
+                "Symbol Company": st.column_config.TextColumn(width=260),
+                "Price": st.column_config.NumberColumn(format="$%.2f", width=105),
+                "Score": st.column_config.NumberColumn(width=85),
+                "Original Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
+                "Signal": st.column_config.TextColumn(width=115),
+                "P/E": st.column_config.NumberColumn(format="%.2f", width=90),
+                "Forward EPS": st.column_config.NumberColumn(format="%.2f", width=125),
+                "% of Total Portfolio": st.column_config.NumberColumn(format="%.2f%%", width=170),
+                "Div.Yield %": st.column_config.NumberColumn(format="%.2f%%", width=125),
+                "52W Low": st.column_config.NumberColumn(format="$%.2f", width=105),
+                "52W High": st.column_config.NumberColumn(format="$%.2f", width=105),
             }
         )
         selected_rows = event.selection.rows if event and hasattr(event, "selection") else []
