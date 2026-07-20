@@ -947,6 +947,7 @@ def render_homepage():
                     unsafe_allow_html=True,
                 )
 
+    st.markdown("<div style=\"height: 28px;\"></div>", unsafe_allow_html=True)
     render_navigation("home_nav")
 
     st.markdown("""
