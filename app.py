@@ -213,6 +213,12 @@ def sf(value):
         return None
 
 
+def normalize_signal(value):
+    """Use BUY instead of BUY everywhere in the application."""
+    signal = str(value or "").strip().upper()
+    return "BUY" if signal == "BUY" else value
+
+
 @st.cache_data(ttl=900, show_spinner=False)
 def get_info(ticker: str):
     t = yf.Ticker(ticker)
@@ -293,7 +299,7 @@ def symbol_company(ticker: str):
     if not symbol:
         return ""
     name = company_name(symbol)
-    return f"{symbol} {name}" if name else symbol
+    return f"{symbol} [{name}]" if name else symbol
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -373,11 +379,11 @@ def valuation(ticker: str, manual_growth=None, manual_pe=None):
     if growth is not None:
         score += max(-10, min(10, growth / 3))
     score = int(max(0, min(100, round(score))))
-    signal = "STRONG BUY" if score >= 80 else "BUY" if score >= 65 else "HOLD" if score >= 45 else "SELL"
+    signal = "BUY" if score >= 65 else "HOLD" if score >= 45 else "SELL"
 
     return {
         "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Original Fair Value": original,
-        "Relative Fair Value": relative, "Score": score, "Signal": signal,
+        "Relative Fair Value": relative, "Score": score, "Signal": normalize_signal(signal),
         "P/E": pe, "Trailing EPS": trailing, "Forward EPS": forward,
         "EPS Growth %": growth, "Annual Dividend": annual_div,
         "Dividend Yield %": div_yield, "52W Low": low52, "52W High": high52,
@@ -398,7 +404,10 @@ def scan_group(tickers_tuple):
             ]})
         except Exception:
             rows.append({"Ticker": ticker, "Company Name": company_name(ticker), "Signal": "DATA ERROR"})
-    return pd.DataFrame(rows)
+    result = pd.DataFrame(rows)
+    if "Signal" in result.columns:
+        result["Signal"] = result["Signal"].map(normalize_signal)
+    return result
 
 
 def calculate_rsi(close: pd.Series, periods=14):
@@ -730,6 +739,12 @@ def compact_number(value):
             return f"{value/divisor:,.2f}{unit}"
     return f"{value:,.0f}"
 
+def go_to_chart(ticker_symbol):
+    st.session_state.selected_ticker = ticker_symbol
+    st.session_state.options_ticker = ticker_symbol
+    st.session_state.active_section = "Price vs EPS"
+
+
 def render_navigation(key_prefix="nav"):
     nav_columns = st.columns(len(section_names), gap="small")
     for nav_col, (icon, section_name) in zip(nav_columns, section_names):
@@ -745,36 +760,22 @@ def render_navigation(key_prefix="nav"):
 
 def render_homepage():
     st.markdown('<div class="section-title">MAJOR MARKETS</div><div class="section-copy"></div>', unsafe_allow_html=True)
-    market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("VIX","^VIX"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
-    market_cols = st.columns(7)
+    market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
+    market_cols = st.columns(6)
     for col, (label, symbol) in zip(market_cols, market_assets):
         with col:
             try:
                 mq = quick_quote(symbol)
-                change = mq.get("change")
+                change = mq["change"]
                 change_pct = mq.get("change_pct")
-                if change is not None and change > 0:
-                    name_color = "#16a34a"
-                elif change is not None and change < 0:
-                    name_color = "#dc2626"
-                else:
-                    name_color = "inherit"
-
-                delta_text = "N/A" if change is None else f"{change:+.2f}"
-                pct_text = "" if change_pct is None else f" ({change_pct:+.2f}%)"
-
+                name_color = "#16a34a" if change is not None and change > 0 else "#dc2626" if change is not None and change < 0 else "#6b7280"
+                delta_text = "N/A" if change is None else f"{change:+.2f}" + (f" ({change_pct:+.2f}%)" if change_pct is not None else "")
                 st.markdown(
                     f"""
-                    <div style="padding:.35rem .45rem;">
-                      <div style="font-size:.72rem;line-height:1.1;font-weight:800;color:{name_color};min-height:2.2rem;">
-                        {label}
-                      </div>
-                      <div style="font-size:1.05rem;line-height:1.08;font-weight:700;white-space:nowrap;">
-                        {money(mq["price"])}
-                      </div>
-                      <div style="font-size:.68rem;line-height:1.05;color:{name_color};white-space:nowrap;">
-                        {delta_text}{pct_text}
-                      </div>
+                    <div style="padding:.55rem .65rem;border:1px solid rgba(128,128,128,.20);border-radius:12px;min-height:108px">
+                      <div style="font-size:.78rem;font-weight:800;color:{name_color};line-height:1.15;min-height:2rem">{label.upper()}</div>
+                      <div style="font-size:1.12rem;font-weight:800;margin-top:.2rem">{money(mq['price'])}</div>
+                      <div style="font-size:.76rem;margin-top:.15rem;color:{name_color};font-weight:700">{delta_text}</div>
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -782,9 +783,9 @@ def render_homepage():
             except Exception:
                 st.markdown(
                     f"""
-                    <div style="padding:.35rem .45rem;">
-                      <div style="font-size:.72rem;line-height:1.1;font-weight:800;min-height:2.2rem;">{label}</div>
-                      <div style="font-size:1.05rem;line-height:1.08;font-weight:700;">Unavailable</div>
+                    <div style="padding:.55rem .65rem;border:1px solid rgba(128,128,128,.20);border-radius:12px;min-height:108px">
+                      <div style="font-size:.78rem;font-weight:800;color:#6b7280;line-height:1.15;min-height:2rem">{label.upper()}</div>
+                      <div style="font-size:.95rem;font-weight:700;margin-top:.35rem">Unavailable</div>
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -794,8 +795,8 @@ def render_homepage():
     <section class="hero">
       <div class="hero-copy">
         <span class="eyebrow">Research • Valuation • Technicals</span>
-        <h1>STOCK ANALYZER TOOL</h1>
-        <p>Earnings-based valuation and technical analysis.</p>
+        <h1>STOCK FAIR VALUE TOOL</h1>
+        <p>Check stocks, Bitcoin, major indexes and oil, then move directly into earnings-based valuation and technical analysis.</p>
       </div>
       <div class="market-card">
         <div class="ticker"><div><div style="opacity:.62;font-size:.78rem">MARKET INTELLIGENCE</div><b>Quote → Valuation → Decision</b></div></div>
@@ -826,12 +827,25 @@ def render_homepage():
             change_text = "N/A" if q["change"] is None else f'{q["change"]:+.2f}'
             change_pct_text = "N/A" if q["change_pct"] is None else f'{q["change_pct"]:+.2f}%'
             exchange_line = " • ".join(x for x in [q.get("exchange"), q.get("currency")] if x)
+            header_col, button_col = st.columns([5, 2], vertical_alignment="center")
+            with header_col:
+                st.markdown(
+                    f"""
+                    <div style="font-size:1.55rem;font-weight:800;letter-spacing:-.02em">{symbol_company(q['ticker'])}</div>
+                    <div style="opacity:.65;font-size:.84rem;margin-top:2px">{exchange_line}</div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            with button_col:
+                if st.button(f'Analyze {q["ticker"]} in Full Dashboard →', type="primary", use_container_width=True, key="home_analyze_quote"):
+                    st.session_state.selected_ticker = q["ticker"]
+                    st.session_state.options_ticker = q["ticker"]
+                    st.session_state.active_section = "Price vs EPS"
+                    st.rerun()
             st.markdown(
                 f"""
                 <div style="padding:22px 24px;border:1px solid rgba(128,128,128,.24);border-radius:16px;background:rgba(128,128,128,.035);margin:8px 0 18px">
-                  <div style="font-size:1.55rem;font-weight:800;letter-spacing:-.02em">{symbol_company(q['ticker'])}</div>
-                  <div style="opacity:.65;font-size:.84rem;margin-top:2px">{exchange_line}</div>
-                  <div style="display:flex;align-items:baseline;gap:14px;margin-top:14px;flex-wrap:wrap">
+                  <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
                     <span style="font-size:2.75rem;font-weight:850;letter-spacing:-.045em">{money(q['price'])}</span>
                     <span style="font-size:1.08rem;font-weight:750">{change_text} ({change_pct_text})</span>
                   </div>
@@ -850,7 +864,18 @@ def render_homepage():
                     ("52 Week Range", "N/A" if q["week52_low"] is None or q["week52_high"] is None else f'{money(q["week52_low"])} - {money(q["week52_high"])}'),
                 ]
                 for label, value in left_rows:
-                    st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
+                    st.markdown(
+                        f"""
+                        <div style="display:flex;justify-content:space-between;align-items:center;
+                                    margin:.35rem 0;color:#000000 !important;
+                                    font-weight:900 !important;">
+                            <span style="color:#000000 !important;font-weight:900 !important;">{label}</span>
+                            <span style="color:#000000 !important;font-weight:900 !important;">{value}</span>
+                        </div>
+                        <hr style="margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)">
+                        """,
+                        unsafe_allow_html=True,
+                    )
             with right_stats:
                 dividend_text = "N/A" if q["dividend_rate"] is None else f'{money(q["dividend_rate"])} ({q["dividend_yield"]:.2f}%)'
                 right_rows = [
@@ -864,30 +889,20 @@ def render_homepage():
                     ("Forward Dividend & Yield", dividend_text),
                 ]
                 for label, value in right_rows:
-                    st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
-            if st.button(f'Analyze {q["ticker"]} in Full Dashboard →', type="primary", key="home_analyze_quote"):
-                st.session_state.selected_ticker = q["ticker"]
-                st.session_state.options_ticker = q["ticker"]
-                st.session_state.active_section = "Price vs EPS"
-                st.rerun()
+                    st.markdown(
+                        f"""
+                        <div style="display:flex;justify-content:space-between;align-items:center;
+                                    margin:.35rem 0;color:#000000 !important;
+                                    font-weight:900 !important;">
+                            <span style="color:#000000 !important;font-weight:900 !important;">{label}</span>
+                            <span style="color:#000000 !important;font-weight:900 !important;">{value}</span>
+                        </div>
+                        <hr style="margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)">
+                        """,
+                        unsafe_allow_html=True,
+                    )
         except Exception as exc:
             st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
-
-    st.markdown('<div class="section-title">Top 10 most actively traded</div><div class="section-copy">Ranked by reported trading volume. Click a symbol to update the instant quote.</div>', unsafe_allow_html=True)
-    try:
-        active = most_active_quotes()
-        for rank, row in enumerate(active, 1):
-            a,b,c,d,e = st.columns([.5,1.2,3,1.4,1.2])
-            a.write(f"**{rank}**")
-            if b.button(symbol_company(row["ticker"]), key=f"active_{rank}_{row['ticker']}", use_container_width=True):
-                st.session_state.home_quote_ticker = row["ticker"]
-                st.rerun()
-            c.write(row["name"] or "Name unavailable")
-            d.write(money(row["price"]))
-            pct = row.get("change_pct")
-            e.write("N/A" if pct is None else f"{pct:+.2f}%")
-    except Exception as exc:
-        st.info(f"Most-active data is temporarily unavailable: {exc}")
 
 
 init_db()
@@ -962,12 +977,12 @@ if active_section == "Price vs EPS":
             mpe = float(pe_text) if pe_text.strip() else None
             with st.spinner(f"Loading {ticker}..."):
                 v = valuation(ticker, mg, mpe)
-            st.markdown(f"### {v['Company Name']} ({v['Ticker']})")
+            st.markdown(f"### {symbol_company(v['Ticker'])}")
             cols = st.columns(6)
             metrics = [
                 ("Price", v["Price"], "$"), ("Original FV", v["Original Fair Value"], "$"),
                 ("Relative FV", v["Relative Fair Value"], "$"), ("Score", v["Score"], ""),
-                ("Signal", v["Signal"], ""), ("Dividend Yield", v["Dividend Yield %"], "%"),
+                ("Signal", normalize_signal(v["Signal"]), ""), ("Dividend Yield", v["Dividend Yield %"], "%"),
             ]
             for c, (label, value, unit) in zip(cols, metrics):
                 if isinstance(value, (int, float)) and value is not None:
@@ -1004,9 +1019,9 @@ if active_section == "Price vs EPS":
         st.info("Enter a symbol above, then select Analyze.")
 
 if active_section == "Watchlists":
-    st.session_state.setdefault("watchlist_category", list(CATEGORY_LISTS)[0])
+    st.session_state.setdefault("watchlist_category", "Most Active")
     st.subheader("Watchlists")
-    category_names = list(CATEGORY_LISTS)
+    category_names = ["Most Active"] + list(CATEGORY_LISTS)
     category_cols = st.columns(len(category_names), gap="small")
     for category_col, category_name in zip(category_cols, category_names):
         with category_col:
@@ -1019,7 +1034,12 @@ if active_section == "Watchlists":
                 st.session_state.watchlist_category = category_name
                 st.rerun()
     category = st.session_state.watchlist_category
-    tickers = CATEGORY_LISTS[category]
+    if category == "Most Active":
+        with st.spinner("Loading most actively traded stocks..."):
+            tickers = [row["ticker"] for row in most_active_quotes()]
+        st.caption("Ranked by reported trading volume. Click any row to load that ticker directly into the chart and Options Finder.")
+    else:
+        tickers = CATEGORY_LISTS[category]
     with st.spinner(f"Loading {category}..."):
         watch_df = scan_group(tuple(tickers))
     if category == "Warren Buffett":
@@ -1028,9 +1048,11 @@ if active_section == "Watchlists":
             f"Portfolio percentages are based on Berkshire Hathaway's latest disclosed 13F holdings "
             f"as of {BUFFETT_13F_REPORT_DATE}. Click any row to load that ticker."
         )
-    else:
+    elif category != "Most Active":
         st.caption("Click any row to load that ticker directly into the chart and Options Finder.")
     watch_df = watch_df.rename(columns={"Dividend Yield %": "Div.Yield %"})
+    if "Signal" in watch_df.columns:
+        watch_df["Signal"] = watch_df["Signal"].map(normalize_signal)
     # Show the strongest-ranked stocks first while keeping Streamlit's
     # interactive header sorting available to the user.
     if "Score" in watch_df.columns:
