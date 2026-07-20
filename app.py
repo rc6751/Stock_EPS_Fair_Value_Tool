@@ -12,7 +12,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
 
-st.set_page_config(page_title="Stock_EPS_Fair_Value_Tool", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Stock Analyzer", page_icon="📈", layout="wide")
 
 # Keep the app at the top after an initial load or Streamlit rerun.
 # NOTE: components.html() only re-executes its embedded <script> when the
@@ -954,7 +954,7 @@ def render_homepage():
     <section class="hero">
       <div class="hero-copy">
         <span class="eyebrow">Research • Valuation • Technicals</span>
-        <h1>STOCK FAIR VALUE TOOL</h1>
+        <h1>STOCK ANALYZER</h1>
         <p>Check stocks, Bitcoin, major indexes and oil, then move directly into earnings-based valuation and technical analysis.</p>
       </div>
       <div class="market-card">
