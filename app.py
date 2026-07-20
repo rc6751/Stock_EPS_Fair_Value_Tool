@@ -955,7 +955,7 @@ def render_homepage():
       <div class="hero-copy">
         <span class="eyebrow">Research • Valuation • Technicals</span>
         <h1>STOCK ANALYZER</h1>
-        <p>Check stocks, Bitcoin, major indexes and oil, then move directly into earnings-based valuation and technical analysis.</p>
+        <p>Earnings-Based Valuation And Technical Analysis.</p>
       </div>
       <div class="market-card">
         <div class="ticker"><div><div style="opacity:.62;font-size:.78rem">MARKET INTELLIGENCE</div><b>Quote → Valuation → Decision</b></div></div>
