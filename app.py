@@ -1153,7 +1153,18 @@ if active_section == "Price vs EPS":
             with left:
                 st.subheader("Valuation methods")
                 methods_df = pd.DataFrame([{"Method": k, "Value": val} for k, val in v["Methods"].items()])
-                st.dataframe(methods_df, use_container_width=True, hide_index=True, column_config={"Value": st.column_config.NumberColumn(format="$%.2f")})
+                
+
+# Default sort: Buy → Hold → Sell (user can still re-sort in the table)
+if "Rating" in watchlist_df.columns:
+    watchlist_df["Rating"] = __import__("pandas").Categorical(
+        watchlist_df["Rating"],
+        categories=["Buy", "Hold", "Sell"],
+        ordered=True
+    )
+    watchlist_df = watchlist_df.sort_values("Rating")
+
+st.dataframe(methods_df, use_container_width=True, hide_index=True, column_config={"Value": st.column_config.NumberColumn(format="$%.2f")})
             with right:
                 st.subheader("Fundamentals")
                 fundamentals = pd.DataFrame({
