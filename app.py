@@ -178,10 +178,7 @@ CATEGORY_LISTS = {
     "Warren Buffett": [
         "AAPL","AXP","KO","BAC","CVX","OXY","GOOGL","CB","MCO","KHC","DVA","KR","SIRI","DAL","VRSN","COF","NYT","ALLY","GOOG","LLYVK","LEN","NUE","LLYVA","LPX","STZ","NVR","M","LEN-B","JEF"
     ],
-    "Semiconductors": [
-        "NVDA","AMD","AVGO","MU","INTC","QCOM","TXN","AMAT","LRCX","KLAC",
-        "MRVL","ARM","TSM","ASML","NXPI","ADI","MCHP","ON","MPWR","SMCI"
-    ],
+    "SOXL": ["NVDA", "AVGO", "AMD", "TSM", "QCOM", "TXN", "MU", "ADI", "MRVL", "AMAT", "KLAC", "LRCX"],
     "Space Stocks": [
         "RKLB","LUNR","RDW","ASTS","PL","BKSY","SIDU","SATL","IRDM","SPIR",
         "VSAT","GSAT","MNTS","ASTR","MAXR"
@@ -229,7 +226,7 @@ SECTOR_PE_DEFAULTS = {
     "Real Estate": 18.0, "Basic Materials": 16.0, "Unknown": 20.0,
 }
 INDUSTRY_PE_OVERRIDES = {
-    "Semiconductors": 35.0, "Semiconductor Equipment & Materials": 30.0,
+    "SOXL": 35.0, "Semiconductor Equipment & Materials": 30.0,
     "Software - Infrastructure": 30.0, "Software - Application": 30.0,
     "Internet Content & Information": 28.0, "Banks - Diversified": 13.0,
     "Banks - Regional": 12.0, "Oil & Gas Integrated": 12.0,
@@ -456,7 +453,7 @@ def calculate_timing_score(ticker: str, current_price, original_fv):
             else:
                 bollinger_score = 10.0
 
-        # Discount to Original FV rewards a larger margin of safety.
+        # Discount to Fair Value rewards a larger margin of safety.
         if original_fv and original_fv > 0 and current_price and current_price > 0:
             discount_pct = (original_fv - current_price) / original_fv * 100
             valuation_score = max(0.0, min(100.0, 40.0 + (discount_pct * 2.0)))
@@ -486,7 +483,7 @@ def calculate_timing_score(ticker: str, current_price, original_fv):
 
 
 def signal_from_value_and_timing(current_price, original_fv, timing_score):
-    """Base the investment signal only on value versus Original FV and timing."""
+    """Base the investment signal only on value versus Fair Value and timing."""
     if not current_price or not original_fv or timing_score is None:
         return "HOLD"
 
@@ -532,7 +529,7 @@ def valuation(ticker: str, manual_growth=None, manual_pe=None):
     signal = signal_from_value_and_timing(current, original, timing_score)
 
     return {
-        "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Original Fair Value": original,
+        "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Fair Value": original,
         "Timing Score": timing_score, "Signal": normalize_signal(signal),
         "P/E": pe, "Trailing EPS": trailing, "Forward EPS": forward,
         "EPS Growth %": growth, "Annual Dividend": annual_div,
@@ -549,7 +546,7 @@ def scan_group(tickers_tuple):
         try:
             v = valuation(ticker)
             rows.append({k: v[k] for k in [
-                "Ticker", "Company Name", "Price", "Original Fair Value", "Timing Score", "Signal",
+                "Ticker", "Company Name", "Price", "Fair Value", "Timing Score", "Signal",
                 "P/E", "Forward EPS", "Dividend Yield %", "52W Low", "52W High"
             ]})
         except Exception:
@@ -615,9 +612,9 @@ def chart_figure(ticker, v, history_months):
         annotation_position="right", row=1, col=1
     )
 
-    original_fv = sf(v.get("Original Fair Value"))
+    original_fv = sf(v.get("Fair Value"))
     for label, value, dash in [
-        ("Original FV", original_fv, "dash"),
+        ("Fair Value", original_fv, "dash"),
     ]:
         if value:
             fig.add_hline(
@@ -692,7 +689,7 @@ def chart_figure(ticker, v, history_months):
         gridcolor="rgba(128,128,128,0.18)", title_text="RSI"
     )
     fig.update_layout(
-        title=f"{ticker} {v.get('Company Name', ticker)} — Price, Bollinger Bands, Original FV and RSI",
+        title=f"{ticker} {v.get('Company Name', ticker)} — Price, Bollinger Bands, Fair Value and RSI",
         height=1120, xaxis_rangeslider_visible=False, hovermode="x unified",
         dragmode="zoom",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
@@ -1131,7 +1128,7 @@ if active_section == "Price vs EPS":
             st.markdown(f"### {symbol_company(v['Ticker'])}")
             cols = st.columns(5)
             metrics = [
-                ("Price", v["Price"], "$"), ("Original FV", v["Original Fair Value"], "$"),
+                ("Price", v["Price"], "$"), ("Fair Value", v["Fair Value"], "$"),
                 ("Timing Score", v["Timing Score"], ""),
                 ("Signal", normalize_signal(v["Signal"]), ""), ("Dividend Yield", v["Dividend Yield %"], "%"),
             ]
@@ -1259,7 +1256,7 @@ if active_section == "Watchlists":
         display_order.extend([
             "Price",
             "Timing Score",
-            "Original Fair Value",
+            "Fair Value",
             "Signal",
             "P/E",
             "Forward EPS",
@@ -1286,7 +1283,7 @@ if active_section == "Watchlists":
                 "Symbol": st.column_config.TextColumn(width=100),
                 "Price": st.column_config.NumberColumn(format="$%.2f", width=105),
                 "Timing Score": st.column_config.NumberColumn(format="%d", width=110),
-                "Original Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
+                "Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
                 "Signal": st.column_config.TextColumn(width=115),
                 "P/E": st.column_config.NumberColumn(format="%.2f", width=90),
                 "Forward EPS": st.column_config.NumberColumn(format="%.2f", width=125),
