@@ -868,28 +868,19 @@ def render_homepage():
         except Exception as exc:
             st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
 
-    st.markdown('<div class="section-title">TOP 10 MOST ACTIVELY TRADED</div><div class="section-copy">Ranked by reported trading volume. Click a stock to open its chart and full analysis.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Top 10 most actively traded</div><div class="section-copy">Ranked by reported trading volume. Click a symbol to update the instant quote.</div>', unsafe_allow_html=True)
     try:
         active = most_active_quotes()
         for rank, row in enumerate(active, 1):
-            selected_ticker = str(row["ticker"]).upper().strip()
-            company_name = row["name"] or "Name unavailable"
-            pct = row.get("change_pct")
-            pct_text = "N/A" if pct is None else f"{pct:+.2f}%"
-            button_label = (
-                f"{rank}.  {symbol_company(selected_ticker)}  |  "
-                f"{company_name}  |  {money(row['price'])}  |  {pct_text}"
-            )
-            if st.button(
-                button_label,
-                key=f"active_{rank}_{selected_ticker}",
-                use_container_width=True,
-            ):
-                st.session_state.home_quote_ticker = selected_ticker
-                st.session_state.selected_ticker = selected_ticker
-                st.session_state.options_ticker = selected_ticker
-                st.session_state.active_section = "Price vs EPS"
+            a,b,c,d,e = st.columns([.5,1.2,3,1.4,1.2])
+            a.write(f"**{rank}**")
+            if b.button(symbol_company(row["ticker"]), key=f"active_{rank}_{row['ticker']}", use_container_width=True):
+                st.session_state.home_quote_ticker = row["ticker"]
                 st.rerun()
+            c.write(row["name"] or "Name unavailable")
+            d.write(money(row["price"]))
+            pct = row.get("change_pct")
+            e.write("N/A" if pct is None else f"{pct:+.2f}%")
     except Exception as exc:
         st.info(f"Most-active data is temporarily unavailable: {exc}")
 
