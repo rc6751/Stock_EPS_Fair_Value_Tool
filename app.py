@@ -751,10 +751,44 @@ def render_homepage():
         with col:
             try:
                 mq = quick_quote(symbol)
-                delta = "" if mq["change"] is None else f'{mq["change"]:+.2f}'
-                st.metric(label, money(mq["price"]), delta)
+                change = mq.get("change")
+                change_pct = mq.get("change_pct")
+                if change is not None and change > 0:
+                    name_color = "#16a34a"
+                elif change is not None and change < 0:
+                    name_color = "#dc2626"
+                else:
+                    name_color = "inherit"
+
+                delta_text = "N/A" if change is None else f"{change:+.2f}"
+                pct_text = "" if change_pct is None else f" ({change_pct:+.2f}%)"
+
+                st.markdown(
+                    f"""
+                    <div style="padding:.35rem .45rem;">
+                      <div style="font-size:.72rem;line-height:1.1;font-weight:800;color:{name_color};min-height:2.2rem;">
+                        {label}
+                      </div>
+                      <div style="font-size:1.05rem;line-height:1.08;font-weight:700;white-space:nowrap;">
+                        {money(mq["price"])}
+                      </div>
+                      <div style="font-size:.68rem;line-height:1.05;color:{name_color};white-space:nowrap;">
+                        {delta_text}{pct_text}
+                      </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
             except Exception:
-                st.metric(label, "Unavailable")
+                st.markdown(
+                    f"""
+                    <div style="padding:.35rem .45rem;">
+                      <div style="font-size:.72rem;line-height:1.1;font-weight:800;min-height:2.2rem;">{label}</div>
+                      <div style="font-size:1.05rem;line-height:1.08;font-weight:700;">Unavailable</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
     st.markdown("""
     <section class="hero">
