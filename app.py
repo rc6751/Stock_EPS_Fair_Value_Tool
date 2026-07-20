@@ -15,19 +15,80 @@ import yfinance as yf
 st.set_page_config(page_title="Stock_EPS_Fair_Value_Tool", page_icon="📈", layout="wide")
 
 # Keep the app at the top after an initial load or Streamlit rerun.
+# NOTE: components.html() only re-executes its embedded <script> when the
+# HTML content actually changes between reruns. A static string here means
+# the scroll-to-top only fires once (the very first load) — on every
+# subsequent rerun (e.g. clicking a nav button to switch sections) the
+# iframe content is unchanged, so the script never re-fires and the browser
+# keeps whatever scroll position it had, which can land near the bottom of
+# the newly rendered (often differently-sized) page. Embedding a per-rerun
+# nonce forces the component to remount every time, so the scroll script
+# always runs on navigation. A few staggered retries also catch content
+# (like live quote data) that finishes loading and shifts page height after
+# the initial paint.
+import uuid as _uuid
+_scroll_nonce = _uuid.uuid4().hex
 components.html(
-    """<script>
-    const scrollTop = () => {
-        try {
-            window.parent.scrollTo({top: 0, left: 0, behavior: 'instant'});
-            const main = window.parent.document.querySelector('section.main');
-            if (main) main.scrollTo({top: 0, left: 0, behavior: 'instant'});
-        } catch (e) {}
-    };
-    scrollTop();
-    setTimeout(scrollTop, 50);
-    setTimeout(scrollTop, 250);
-    </script>""",
+    f"""<script>
+    (function() {{
+        const doc = window.parent.document;
+        const win = window.parent;
+        const selectors = [
+            '[data-testid="stAppViewContainer"]',
+            '[data-testid="stMain"]',
+            '[data-testid="stAppViewBlockContainer"]',
+            'section.main',
+            '.main',
+        ];
+        let active = true;
+
+        const scrollTop = () => {{
+            if (!active) return;
+            try {{
+                win.scrollTo({{top: 0, left: 0, behavior: 'instant'}});
+                doc.documentElement.scrollTop = 0;
+                doc.body.scrollTop = 0;
+                selectors.forEach((sel) => {{
+                    const el = doc.querySelector(sel);
+                    if (el) el.scrollTop = 0;
+                }});
+            }} catch (e) {{}}
+        }};
+
+        const stop = () => {{
+            active = false;
+            try {{ win.clearInterval(interval); }} catch (e) {{}}
+            try {{ observer.disconnect(); }} catch (e) {{}}
+        }};
+
+        // Any real user scroll intent permanently cancels the auto-scroll
+        // for this render, so it never fights manual scrolling.
+        const userInputEvents = ['wheel', 'touchmove', 'keydown', 'mousedown'];
+        userInputEvents.forEach((evt) => {{
+            try {{ doc.addEventListener(evt, stop, {{ once: true, passive: true }}); }} catch (e) {{}}
+        }});
+
+        scrollTop();
+
+        // Keep re-applying briefly in case late content (e.g. live quotes)
+        // finishes loading and shifts page height after the initial paint —
+        // but only until the user actually tries to scroll.
+        let ticks = 0;
+        const interval = win.setInterval(() => {{
+            scrollTop();
+            ticks += 1;
+            if (ticks > 8) stop();
+        }}, 150);
+
+        let observer;
+        try {{
+            observer = new MutationObserver(() => scrollTop());
+            observer.observe(doc.body, {{childList: true, subtree: true}});
+            win.setTimeout(stop, 1200);
+        }} catch (e) {{}}
+    }})();
+    </script>
+    <!-- nonce: {_scroll_nonce} -->""",
     height=0,
 )
 
@@ -102,7 +163,6 @@ APP_DIR = Path(__file__).resolve().parent
 DB_PATH = APP_DIR / "paper_trading.db"
 
 CATEGORY_LISTS = {
-    "Top 35": ["NVDA","TSLA","AAPL","AMD","AMZN","SOFI","PLTR","INTC","F","BAC","MU","NIO","MARA","RIVN","LCID","T","PFE","CCL","AAL","SNAP","MSFT","META","GOOGL","NFLX","AVGO","QCOM","CSCO","ORCL","CRM","UBER","SHOP","COIN","HOOD","PYPL","XYZ"],
     "Magnificent 7": ["AAPL","MSFT","AMZN","GOOGL","META","NVDA","TSLA"],
     "Dividend Kings": [
         "ABM","ADP","AWR","BDX","BKH","CINF","CL","CWT","DOV","EMR",
@@ -213,6 +273,12 @@ def sf(value):
         return None
 
 
+def normalize_signal(value):
+    """Use BUY instead of BUY everywhere in the application."""
+    signal = str(value or "").strip().upper()
+    return "BUY" if signal == "BUY" else value
+
+
 @st.cache_data(ttl=900, show_spinner=False)
 def get_info(ticker: str):
     t = yf.Ticker(ticker)
@@ -293,7 +359,7 @@ def symbol_company(ticker: str):
     if not symbol:
         return ""
     name = company_name(symbol)
-    return f"{symbol} {name}" if name else symbol
+    return f"{symbol} [{name}]" if name else symbol
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -333,6 +399,105 @@ def eps_growth(q):
     return None if latest <= 0 or prior <= 0 else (latest / prior - 1) * 100
 
 
+def calculate_timing_score(ticker: str, current_price, original_fv):
+    """Return a 0-100 entry-timing score from RSI, Bollinger position,
+    valuation discount, and 20-day momentum.
+    """
+    try:
+        hist = get_history(ticker, period="6mo", interval="1d")
+        close = pd.to_numeric(hist["Close"], errors="coerce").dropna()
+        if len(close) < 21:
+            return None
+
+        delta = close.diff()
+        gain = delta.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
+        loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean()
+        rs = gain / loss.replace(0, np.nan)
+        rsi_series = 100 - (100 / (1 + rs))
+        latest_rsi = sf(rsi_series.dropna().iloc[-1]) if not rsi_series.dropna().empty else None
+
+        mid = close.rolling(20).mean()
+        std = close.rolling(20).std()
+        lower = mid - 2 * std
+        upper = mid + 2 * std
+        last = float(close.iloc[-1])
+        latest_lower = sf(lower.iloc[-1])
+        latest_upper = sf(upper.iloc[-1])
+
+        # RSI: oversold readings receive the strongest entry score.
+        if latest_rsi is None:
+            rsi_score = 50.0
+        elif latest_rsi <= 25:
+            rsi_score = 100.0
+        elif latest_rsi <= 30:
+            rsi_score = 90.0
+        elif latest_rsi <= 40:
+            rsi_score = 75.0
+        elif latest_rsi <= 60:
+            rsi_score = 50.0
+        elif latest_rsi <= 70:
+            rsi_score = 30.0
+        else:
+            rsi_score = 10.0
+
+        # Bollinger position: lower-band proximity is more favorable for entry.
+        if latest_lower is None or latest_upper is None or latest_upper <= latest_lower:
+            bollinger_score = 50.0
+        else:
+            band_position = (last - latest_lower) / (latest_upper - latest_lower)
+            if band_position <= 0:
+                bollinger_score = 100.0
+            elif band_position <= 0.20:
+                bollinger_score = 80.0
+            elif band_position <= 0.60:
+                bollinger_score = 50.0
+            elif band_position <= 1.0:
+                bollinger_score = 25.0
+            else:
+                bollinger_score = 10.0
+
+        # Discount to Original FV rewards a larger margin of safety.
+        if original_fv and original_fv > 0 and current_price and current_price > 0:
+            discount_pct = (original_fv - current_price) / original_fv * 100
+            valuation_score = max(0.0, min(100.0, 40.0 + (discount_pct * 2.0)))
+        else:
+            valuation_score = 50.0
+
+        # Moderate 20-day momentum is favored; extended surges are penalized.
+        momentum_20d = (last / float(close.iloc[-21]) - 1) * 100
+        if -8 <= momentum_20d <= 5:
+            momentum_score = 80.0
+        elif -15 <= momentum_20d < -8 or 5 < momentum_20d <= 10:
+            momentum_score = 60.0
+        elif momentum_20d < -15:
+            momentum_score = 35.0
+        else:
+            momentum_score = 25.0
+
+        score = (
+            0.40 * rsi_score
+            + 0.30 * bollinger_score
+            + 0.20 * valuation_score
+            + 0.10 * momentum_score
+        )
+        return int(max(0, min(100, round(score))))
+    except Exception:
+        return None
+
+
+def signal_from_value_and_timing(current_price, original_fv, timing_score):
+    """Base the investment signal only on value versus Original FV and timing."""
+    if not current_price or not original_fv or timing_score is None:
+        return "HOLD"
+
+    value_ratio = current_price / original_fv
+    if value_ratio <= 1.00 and timing_score >= 70:
+        return "BUY"
+    if value_ratio >= 1.15 and timing_score < 50:
+        return "SELL"
+    return "HOLD"
+
+
 def valuation(ticker: str, manual_growth=None, manual_pe=None):
     info = get_info(ticker)
     q = get_quarterly_eps(ticker)
@@ -357,31 +522,22 @@ def valuation(ticker: str, manual_growth=None, manual_pe=None):
 
     sector = info.get("sector") or "Unknown"
     industry = info.get("industry") or "Unknown"
-    relative_pe = INDUSTRY_PE_OVERRIDES.get(industry, SECTOR_PE_DEFAULTS.get(sector, 20.0))
-    relative_eps = forward if forward and forward > 0 else trailing
-    relative = relative_eps * relative_pe if relative_eps and relative_eps > 0 else None
 
     annual_div = sf(info.get("dividendRate")) or 0.0
     div_yield = annual_div / current * 100 if current else 0.0
     low52 = sf(info.get("fiftyTwoWeekLow"))
     high52 = sf(info.get("fiftyTwoWeekHigh"))
 
-    discount = ((original - current) / original * 100) if original and current else None
-    score = 50
-    if discount is not None:
-        score += max(-30, min(30, discount))
-    if growth is not None:
-        score += max(-10, min(10, growth / 3))
-    score = int(max(0, min(100, round(score))))
-    signal = "STRONG BUY" if score >= 80 else "BUY" if score >= 65 else "HOLD" if score >= 45 else "SELL"
+    timing_score = calculate_timing_score(ticker, current, original)
+    signal = signal_from_value_and_timing(current, original, timing_score)
 
     return {
         "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Original Fair Value": original,
-        "Relative Fair Value": relative, "Score": score, "Signal": signal,
+        "Timing Score": timing_score, "Signal": normalize_signal(signal),
         "P/E": pe, "Trailing EPS": trailing, "Forward EPS": forward,
         "EPS Growth %": growth, "Annual Dividend": annual_div,
         "Dividend Yield %": div_yield, "52W Low": low52, "52W High": high52,
-        "Sector": sector, "Industry": industry, "Relative P/E": relative_pe,
+        "Sector": sector, "Industry": industry,
         "Methods": methods, "Quarterly EPS": q,
     }
 
@@ -393,12 +549,15 @@ def scan_group(tickers_tuple):
         try:
             v = valuation(ticker)
             rows.append({k: v[k] for k in [
-                "Ticker", "Company Name", "Price", "Original Fair Value", "Relative Fair Value", "Score", "Signal",
+                "Ticker", "Company Name", "Price", "Original Fair Value", "Timing Score", "Signal",
                 "P/E", "Forward EPS", "Dividend Yield %", "52W Low", "52W High"
             ]})
         except Exception:
             rows.append({"Ticker": ticker, "Company Name": company_name(ticker), "Signal": "DATA ERROR"})
-    return pd.DataFrame(rows)
+    result = pd.DataFrame(rows)
+    if "Signal" in result.columns:
+        result["Signal"] = result["Signal"].map(normalize_signal)
+    return result
 
 
 def calculate_rsi(close: pd.Series, periods=14):
@@ -457,20 +616,8 @@ def chart_figure(ticker, v, history_months):
     )
 
     original_fv = sf(v.get("Original Fair Value"))
-    relative_fv = sf(v.get("Relative Fair Value"))
-
-    # Keep Relative FV off the chart when it is an outlier versus Original FV.
-    # A 30% maximum difference keeps the price scale useful while preserving
-    # the underlying Relative FV calculation elsewhere in the app.
-    relative_fv_for_chart = None
-    if original_fv and original_fv > 0 and relative_fv and relative_fv > 0:
-        relative_gap_pct = abs(relative_fv - original_fv) / original_fv
-        if relative_gap_pct <= 0.30:
-            relative_fv_for_chart = relative_fv
-
     for label, value, dash in [
         ("Original FV", original_fv, "dash"),
-        ("Relative FV", relative_fv_for_chart, "dot"),
     ]:
         if value:
             fig.add_hline(
@@ -516,7 +663,7 @@ def chart_figure(ticker, v, history_months):
         ), row=2, col=1)
 
     values = pd.concat([close.loc[df.index], upper, lower]).dropna()
-    extras = [x for x in (original_fv, relative_fv_for_chart) if x]
+    extras = [x for x in (original_fv,) if x]
     if not values.empty:
         ymin = min([values.min()] + extras)
         ymax = max([values.max()] + extras)
@@ -545,7 +692,7 @@ def chart_figure(ticker, v, history_months):
         gridcolor="rgba(128,128,128,0.18)", title_text="RSI"
     )
     fig.update_layout(
-        title=f"{ticker} {v.get('Company Name', ticker)} — Price, Bollinger Bands, Fair Values and RSI",
+        title=f"{ticker} {v.get('Company Name', ticker)} — Price, Bollinger Bands, Original FV and RSI",
         height=1120, xaxis_rangeslider_visible=False, hovermode="x unified",
         dragmode="zoom",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
@@ -718,6 +865,27 @@ def most_active_quotes():
     return rows[:10]
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def most_active_symbols(count=100):
+    """Return up to `count` of today's most actively traded equity tickers,
+    used as the scan pool for the dynamic 'Top Buys' watchlist."""
+    fallback = [
+        "NVDA","TSLA","AAPL","AMD","AMZN","SOFI","PLTR","INTC","F","BAC",
+        "MU","NIO","MARA","RIVN","LCID","T","PFE","CCL","AAL","SNAP",
+        "MSFT","META","GOOGL","NFLX","AVGO","QCOM","CSCO","ORCL","CRM","UBER",
+        "SHOP","COIN","HOOD","PYPL","XYZ",
+    ]
+    symbols = []
+    try:
+        result = yf.screen("most_actives", count=count)
+        quotes = result.get("quotes", []) if isinstance(result, dict) else []
+        symbols = [q.get("symbol") for q in quotes if q.get("symbol") and q.get("quoteType") in (None, "EQUITY")]
+    except Exception:
+        symbols = []
+    symbols = list(dict.fromkeys(symbols + fallback))
+    return symbols[:count]
+
+
 def money(value):
     return "N/A" if value is None else f"${value:,.2f}"
 
@@ -729,6 +897,12 @@ def compact_number(value):
         if abs(value) >= divisor:
             return f"{value/divisor:,.2f}{unit}"
     return f"{value:,.0f}"
+
+def go_to_chart(ticker_symbol):
+    st.session_state.selected_ticker = ticker_symbol
+    st.session_state.options_ticker = ticker_symbol
+    st.session_state.active_section = "Price vs EPS"
+
 
 def render_navigation(key_prefix="nav"):
     nav_columns = st.columns(len(section_names), gap="small")
@@ -744,17 +918,37 @@ def render_navigation(key_prefix="nav"):
                 st.rerun()
 
 def render_homepage():
-    st.markdown('<div class="section-title">Major markets</div><div class="section-copy"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">MAJOR MARKETS</div><div class="section-copy"></div>', unsafe_allow_html=True)
     market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
     market_cols = st.columns(6)
     for col, (label, symbol) in zip(market_cols, market_assets):
         with col:
             try:
                 mq = quick_quote(symbol)
-                delta = "" if mq["change"] is None else f'{mq["change"]:+.2f}'
-                st.metric(label, money(mq["price"]), delta)
+                change = mq["change"]
+                change_pct = mq.get("change_pct")
+                name_color = "#16a34a" if change is not None and change > 0 else "#dc2626" if change is not None and change < 0 else "#6b7280"
+                delta_text = "N/A" if change is None else f"{change:+.2f}" + (f" ({change_pct:+.2f}%)" if change_pct is not None else "")
+                st.markdown(
+                    f"""
+                    <div style="padding:.55rem .65rem;border:1px solid rgba(128,128,128,.20);border-radius:12px;min-height:108px">
+                      <div style="font-size:.78rem;font-weight:800;color:{name_color};line-height:1.15;min-height:2rem">{label.upper()}</div>
+                      <div style="font-size:1.12rem;font-weight:800;margin-top:.2rem">{money(mq['price'])}</div>
+                      <div style="font-size:.76rem;margin-top:.15rem;color:{name_color};font-weight:700">{delta_text}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
             except Exception:
-                st.metric(label, "Unavailable")
+                st.markdown(
+                    f"""
+                    <div style="padding:.55rem .65rem;border:1px solid rgba(128,128,128,.20);border-radius:12px;min-height:108px">
+                      <div style="font-size:.78rem;font-weight:800;color:#6b7280;line-height:1.15;min-height:2rem">{label.upper()}</div>
+                      <div style="font-size:.95rem;font-weight:700;margin-top:.35rem">Unavailable</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
     st.markdown("""
     <section class="hero">
@@ -816,7 +1010,18 @@ def render_homepage():
                     ("52 Week Range", "N/A" if q["week52_low"] is None or q["week52_high"] is None else f'{money(q["week52_low"])} - {money(q["week52_high"])}'),
                 ]
                 for label, value in left_rows:
-                    st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
+                    st.markdown(
+                        f"""
+                        <div style="display:flex;justify-content:space-between;align-items:center;
+                                    margin:.35rem 0;color:#000000 !important;
+                                    font-weight:900 !important;">
+                            <span style="color:#000000 !important;font-weight:900 !important;">{label}</span>
+                            <span style="color:#000000 !important;font-weight:900 !important;">{value}</span>
+                        </div>
+                        <hr style="margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)">
+                        """,
+                        unsafe_allow_html=True,
+                    )
             with right_stats:
                 dividend_text = "N/A" if q["dividend_rate"] is None else f'{money(q["dividend_rate"])} ({q["dividend_yield"]:.2f}%)'
                 right_rows = [
@@ -830,7 +1035,18 @@ def render_homepage():
                     ("Forward Dividend & Yield", dividend_text),
                 ]
                 for label, value in right_rows:
-                    st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
+                    st.markdown(
+                        f"""
+                        <div style="display:flex;justify-content:space-between;align-items:center;
+                                    margin:.35rem 0;color:#000000 !important;
+                                    font-weight:900 !important;">
+                            <span style="color:#000000 !important;font-weight:900 !important;">{label}</span>
+                            <span style="color:#000000 !important;font-weight:900 !important;">{value}</span>
+                        </div>
+                        <hr style="margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)">
+                        """,
+                        unsafe_allow_html=True,
+                    )
             if st.button(f'Analyze {q["ticker"]} in Full Dashboard →', type="primary", key="home_analyze_quote"):
                 st.session_state.selected_ticker = q["ticker"]
                 st.session_state.options_ticker = q["ticker"]
@@ -838,22 +1054,6 @@ def render_homepage():
                 st.rerun()
         except Exception as exc:
             st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
-
-    st.markdown('<div class="section-title">Top 10 most actively traded</div><div class="section-copy">Ranked by reported trading volume. Click a symbol to update the instant quote.</div>', unsafe_allow_html=True)
-    try:
-        active = most_active_quotes()
-        for rank, row in enumerate(active, 1):
-            a,b,c,d,e = st.columns([.5,1.2,3,1.4,1.2])
-            a.write(f"**{rank}**")
-            if b.button(symbol_company(row["ticker"]), key=f"active_{rank}_{row['ticker']}", use_container_width=True):
-                st.session_state.home_quote_ticker = row["ticker"]
-                st.rerun()
-            c.write(row["name"] or "Name unavailable")
-            d.write(money(row["price"]))
-            pct = row.get("change_pct")
-            e.write("N/A" if pct is None else f"{pct:+.2f}%")
-    except Exception as exc:
-        st.info(f"Most-active data is temporarily unavailable: {exc}")
 
 
 init_db()
@@ -928,12 +1128,12 @@ if active_section == "Price vs EPS":
             mpe = float(pe_text) if pe_text.strip() else None
             with st.spinner(f"Loading {ticker}..."):
                 v = valuation(ticker, mg, mpe)
-            st.markdown(f"### {v['Company Name']} ({v['Ticker']})")
-            cols = st.columns(6)
+            st.markdown(f"### {symbol_company(v['Ticker'])}")
+            cols = st.columns(5)
             metrics = [
                 ("Price", v["Price"], "$"), ("Original FV", v["Original Fair Value"], "$"),
-                ("Relative FV", v["Relative Fair Value"], "$"), ("Score", v["Score"], ""),
-                ("Signal", v["Signal"], ""), ("Dividend Yield", v["Dividend Yield %"], "%"),
+                ("Timing Score", v["Timing Score"], ""),
+                ("Signal", normalize_signal(v["Signal"]), ""), ("Dividend Yield", v["Dividend Yield %"], "%"),
             ]
             for c, (label, value, unit) in zip(cols, metrics):
                 if isinstance(value, (int, float)) and value is not None:
@@ -960,8 +1160,8 @@ if active_section == "Price vs EPS":
             with right:
                 st.subheader("Fundamentals")
                 fundamentals = pd.DataFrame({
-                    "Metric": ["Sector", "Industry", "Trailing EPS", "Forward EPS", "P/E used", "EPS Growth", "Relative P/E"],
-                    "Value": [v["Sector"], v["Industry"], v["Trailing EPS"], v["Forward EPS"], v["P/E"], v["EPS Growth %"], v["Relative P/E"]]
+                    "Metric": ["Sector", "Industry", "Trailing EPS", "Forward EPS", "P/E used", "EPS Growth"],
+                    "Value": [v["Sector"], v["Industry"], v["Trailing EPS"], v["Forward EPS"], v["P/E"], v["EPS Growth %"]]
                 })
                 st.dataframe(fundamentals, use_container_width=True, hide_index=True)
         except Exception as exc:
@@ -970,79 +1170,138 @@ if active_section == "Price vs EPS":
         st.info("Enter a symbol above, then select Analyze.")
 
 if active_section == "Watchlists":
-    st.session_state.setdefault("watchlist_category", list(CATEGORY_LISTS)[0])
+    st.session_state.setdefault("watchlist_category", "Most Active")
     st.subheader("Watchlists")
-    category_names = list(CATEGORY_LISTS)
-    category_cols = st.columns(len(category_names), gap="small")
-    for category_col, category_name in zip(category_cols, category_names):
-        with category_col:
-            if st.button(
-                category_name,
-                key=f"watchlist_{category_name}",
-                use_container_width=True,
-                type="primary" if st.session_state.watchlist_category == category_name else "secondary",
-            ):
-                st.session_state.watchlist_category = category_name
-                st.rerun()
+    st.markdown("""
+    <style>
+    .st-key-watchlist_tabs div[data-testid="stButton"] > button {
+        min-height: 2.1rem;
+        padding: .25rem .4rem;
+        font-size: .74rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    category_names = ["Most Active", "Top Buys"] + list(CATEGORY_LISTS)
+    with st.container(key="watchlist_tabs"):
+        category_cols = st.columns(len(category_names), gap="small")
+        for category_col, category_name in zip(category_cols, category_names):
+            with category_col:
+                if st.button(
+                    category_name,
+                    key=f"watchlist_{category_name}",
+                    use_container_width=True,
+                    type="primary" if st.session_state.watchlist_category == category_name else "secondary",
+                ):
+                    st.session_state.watchlist_category = category_name
+                    st.rerun()
+
     category = st.session_state.watchlist_category
-    tickers = CATEGORY_LISTS[category]
-    with st.spinner(f"Loading {category}..."):
-        watch_df = scan_group(tuple(tickers))
-    if category == "Warren Buffett":
-        watch_df["% of Total Portfolio"] = watch_df["Ticker"].map(BUFFETT_PORTFOLIO_WEIGHTS)
+
+    if category == "Most Active":
+        with st.spinner("Loading most actively traded stocks..."):
+            tickers = [row["ticker"] for row in most_active_quotes()]
+        with st.spinner(f"Loading {category}..."):
+            watch_df = scan_group(tuple(tickers))
         st.caption(
-            f"Portfolio percentages are based on Berkshire Hathaway's latest disclosed 13F holdings "
-            f"as of {BUFFETT_13F_REPORT_DATE}. Click any row to load that ticker."
+            "Ranked by reported trading volume. Click any row to load that ticker "
+            "directly into the chart and Options Finder."
         )
+    elif category == "Top Buys":
+        with st.spinner("Scanning today's most actively traded stocks for BUY signals..."):
+            pool_tickers = most_active_symbols(count=100)
+            scanned = scan_group(tuple(pool_tickers))
+        watch_df = (
+            scanned[scanned["Signal"] == "BUY"]
+            .sort_values(by="Timing Score", ascending=False, na_position="last")
+            .head(10)
+            .reset_index(drop=True)
+        )
+        if watch_df.empty:
+            st.info("No BUY-rated stocks found among today's most actively traded tickers right now.")
+        else:
+            st.caption(
+                f"Top {len(watch_df)} BUY-rated stock{'s' if len(watch_df) != 1 else ''} out of "
+                f"{len(pool_tickers)} of today's most actively traded tickers scanned. "
+                "Click any row to load that ticker directly into the chart and Options Finder."
+            )
     else:
-        st.caption("Click any row to load that ticker directly into the chart and Options Finder.")
-    watch_df = watch_df.rename(columns={"Dividend Yield %": "Div.Yield %"})
-    # Show the strongest-ranked stocks first while keeping Streamlit's
-    # interactive header sorting available to the user.
-    if "Score" in watch_df.columns:
-        watch_df = watch_df.sort_values(by="Score", ascending=False, na_position="last").reset_index(drop=True)
+        tickers = CATEGORY_LISTS[category]
+        with st.spinner(f"Loading {category}..."):
+            watch_df = scan_group(tuple(tickers))
+        if category == "Warren Buffett":
+            watch_df["% of Total Portfolio"] = watch_df["Ticker"].map(BUFFETT_PORTFOLIO_WEIGHTS)
+            st.caption(
+                f"Portfolio percentages are based on Berkshire Hathaway's latest disclosed 13F holdings "
+                f"as of {BUFFETT_13F_REPORT_DATE}. Click any row to load that ticker."
+            )
+        else:
+            st.caption("Click any row to load that ticker directly into the chart and Options Finder.")
 
-    # Keep Score immediately after Price for every watchlist category.
-    preferred_order = ["Ticker", "Company Name"]
-    if "% of Total Portfolio" in watch_df.columns:
-        preferred_order.append("% of Total Portfolio")
-    preferred_order.extend([
-        "Price", "Score", "Original Fair Value", "Relative Fair Value", "Signal",
-        "P/E", "Forward EPS", "Div.Yield %", "52W Low", "52W High"
-    ])
-    remaining_columns = [col for col in watch_df.columns if col not in preferred_order]
-    watch_df = watch_df[[col for col in preferred_order if col in watch_df.columns] + remaining_columns]
-    watch_display_df = watch_df.copy()
-    watch_display_df.insert(0, "Symbol Company", watch_display_df["Ticker"].map(symbol_company))
-    watch_display_df = watch_display_df.drop(columns=["Ticker", "Company Name"], errors="ignore")
+    if not watch_df.empty:
+        watch_df = watch_df.rename(columns={"Dividend Yield %": "Div.Yield %"})
+        if "Signal" in watch_df.columns:
+            watch_df["Signal"] = watch_df["Signal"].map(normalize_signal)
+        if "Timing Score" in watch_df.columns:
+            watch_df = watch_df.sort_values(
+                by="Timing Score",
+                ascending=False,
+                na_position="last",
+            ).reset_index(drop=True)
 
-    event = st.dataframe(
-        watch_display_df,
-        key=f"watchlist_table_{category}",
-        use_container_width=True,
-        hide_index=True,
-        on_select="rerun",
-        selection_mode="single-row",
-        column_config={
-            "Symbol Company": st.column_config.TextColumn(width=260),
-            "Price": st.column_config.NumberColumn(format="$%.2f", width=105),
-            "Score": st.column_config.NumberColumn(width=85),
-            "Original Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
-            "Relative Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
-            "Signal": st.column_config.TextColumn(width=115),
-            "P/E": st.column_config.NumberColumn(format="%.2f", width=90),
-            "Forward EPS": st.column_config.NumberColumn(format="%.2f", width=125),
-            "% of Total Portfolio": st.column_config.NumberColumn(format="%.2f%%", width=170),
-            "Div.Yield %": st.column_config.NumberColumn(format="%.2f%%", width=125),
-            "52W Low": st.column_config.NumberColumn(format="$%.2f", width=105),
-            "52W High": st.column_config.NumberColumn(format="$%.2f", width=105),
-        }
-    )
-    selected_rows = event.selection.rows if event and hasattr(event, "selection") else []
-    if selected_rows:
-        selected = str(watch_df.iloc[selected_rows[0]]["Ticker"]).upper().strip()
-        st.session_state.pending_watchlist_ticker = selected
-        st.rerun()
+        # The Watchlists display uses the stock symbol only. Company names are
+        # intentionally excluded from every category and dropdown result.
+        display_order = ["Ticker"]
+        if "% of Total Portfolio" in watch_df.columns:
+            display_order.append("% of Total Portfolio")
+        display_order.extend([
+            "Price",
+            "Timing Score",
+            "Original Fair Value",
+            "Signal",
+            "P/E",
+            "Forward EPS",
+            "Div.Yield %",
+            "52W Low",
+            "52W High",
+        ])
+
+        watch_display_df = watch_df.drop(columns=["Company Name"], errors="ignore").copy()
+        remaining_columns = [col for col in watch_display_df.columns if col not in display_order]
+        watch_display_df = watch_display_df[
+            [col for col in display_order if col in watch_display_df.columns] + remaining_columns
+        ]
+        watch_display_df = watch_display_df.rename(columns={"Ticker": "Symbol"})
+
+        event = st.dataframe(
+            watch_display_df,
+            key=f"watchlist_table_{category}",
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            column_config={
+                "Symbol": st.column_config.TextColumn(width=100),
+                "Price": st.column_config.NumberColumn(format="$%.2f", width=105),
+                "Timing Score": st.column_config.NumberColumn(format="%d", width=110),
+                "Original Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
+                "Signal": st.column_config.TextColumn(width=115),
+                "P/E": st.column_config.NumberColumn(format="%.2f", width=90),
+                "Forward EPS": st.column_config.NumberColumn(format="%.2f", width=125),
+                "% of Total Portfolio": st.column_config.NumberColumn(format="%.2f%%", width=170),
+                "Div.Yield %": st.column_config.NumberColumn(format="%.2f%%", width=125),
+                "52W Low": st.column_config.NumberColumn(format="$%.2f", width=105),
+                "52W High": st.column_config.NumberColumn(format="$%.2f", width=105),
+            },
+        )
+
+        selected_rows = event.selection.rows if event and hasattr(event, "selection") else []
+        if selected_rows:
+            selected = str(watch_display_df.iloc[selected_rows[0]]["Symbol"]).upper().strip()
+            st.session_state.pending_watchlist_ticker = selected
+            st.rerun()
 
 if active_section == "Paper Trading":
     cash_col, save_col = st.columns([4, 1])
