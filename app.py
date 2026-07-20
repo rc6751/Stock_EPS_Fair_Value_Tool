@@ -739,12 +739,6 @@ def compact_number(value):
             return f"{value/divisor:,.2f}{unit}"
     return f"{value:,.0f}"
 
-def go_to_chart(ticker_symbol):
-    st.session_state.selected_ticker = ticker_symbol
-    st.session_state.options_ticker = ticker_symbol
-    st.session_state.active_section = "Price vs EPS"
-
-
 def render_navigation(key_prefix="nav"):
     nav_columns = st.columns(len(section_names), gap="small")
     for nav_col, (icon, section_name) in zip(nav_columns, section_names):
@@ -851,18 +845,7 @@ def render_homepage():
                     ("52 Week Range", "N/A" if q["week52_low"] is None or q["week52_high"] is None else f'{money(q["week52_low"])} - {money(q["week52_high"])}'),
                 ]
                 for label, value in left_rows:
-                    st.markdown(
-                        f"""
-                        <div style="display:flex;justify-content:space-between;align-items:center;
-                                    margin:.35rem 0;color:#000000 !important;
-                                    font-weight:900 !important;">
-                            <span style="color:#000000 !important;font-weight:900 !important;">{label}</span>
-                            <span style="color:#000000 !important;font-weight:900 !important;">{value}</span>
-                        </div>
-                        <hr style="margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)">
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                    st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
             with right_stats:
                 dividend_text = "N/A" if q["dividend_rate"] is None else f'{money(q["dividend_rate"])} ({q["dividend_yield"]:.2f}%)'
                 right_rows = [
@@ -876,18 +859,7 @@ def render_homepage():
                     ("Forward Dividend & Yield", dividend_text),
                 ]
                 for label, value in right_rows:
-                    st.markdown(
-                        f"""
-                        <div style="display:flex;justify-content:space-between;align-items:center;
-                                    margin:.35rem 0;color:#000000 !important;
-                                    font-weight:900 !important;">
-                            <span style="color:#000000 !important;font-weight:900 !important;">{label}</span>
-                            <span style="color:#000000 !important;font-weight:900 !important;">{value}</span>
-                        </div>
-                        <hr style="margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)">
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                    st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
             if st.button(f'Analyze {q["ticker"]} in Full Dashboard →', type="primary", key="home_analyze_quote"):
                 st.session_state.selected_ticker = q["ticker"]
                 st.session_state.options_ticker = q["ticker"]
@@ -896,23 +868,28 @@ def render_homepage():
         except Exception as exc:
             st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
 
-    st.markdown('<div class="section-title">Top 10 most actively traded</div><div class="section-copy">Ranked by reported trading volume. Click a symbol to open its full chart analysis.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">TOP 10 MOST ACTIVELY TRADED</div><div class="section-copy">Ranked by reported trading volume. Click a stock to open its chart and full analysis.</div>', unsafe_allow_html=True)
     try:
         active = most_active_quotes()
         for rank, row in enumerate(active, 1):
-            a,b,c,d,e = st.columns([.5,1.2,3,1.4,1.2])
-            a.write(f"**{rank}**")
-            b.button(
-                symbol_company(row["ticker"]),
-                key=f"active_{rank}_{row['ticker']}",
-                use_container_width=True,
-                on_click=go_to_chart,
-                args=(row["ticker"],),
-            )
-            c.write(row["name"] or "Name unavailable")
-            d.write(money(row["price"]))
+            selected_ticker = str(row["ticker"]).upper().strip()
+            company_name = row["name"] or "Name unavailable"
             pct = row.get("change_pct")
-            e.write("N/A" if pct is None else f"{pct:+.2f}%")
+            pct_text = "N/A" if pct is None else f"{pct:+.2f}%"
+            button_label = (
+                f"{rank}.  {symbol_company(selected_ticker)}  |  "
+                f"{company_name}  |  {money(row['price'])}  |  {pct_text}"
+            )
+            if st.button(
+                button_label,
+                key=f"active_{rank}_{selected_ticker}",
+                use_container_width=True,
+            ):
+                st.session_state.home_quote_ticker = selected_ticker
+                st.session_state.selected_ticker = selected_ticker
+                st.session_state.options_ticker = selected_ticker
+                st.session_state.active_section = "Price vs EPS"
+                st.rerun()
     except Exception as exc:
         st.info(f"Most-active data is temporarily unavailable: {exc}")
 
