@@ -915,7 +915,6 @@ def render_navigation(key_prefix="nav"):
                 st.rerun()
 
 def render_homepage():
-    render_navigation("home_nav")
     st.markdown('<div class="section-title">MAJOR MARKETS</div><div class="section-copy"></div>', unsafe_allow_html=True)
     market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("VIX","^VIX"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
     market_cols = st.columns(7)
@@ -951,7 +950,8 @@ def render_homepage():
     st.markdown("""
     <section class="hero">
       <div class="hero-copy">
-        <span class="eyebrow">Research • Valuation • Technicals</span>
+        <span class="eyebrow">Research • Valuation • Technicals</span>    render_navigation("home_nav")
+
         <h1>STOCK ANALYZER</h1>
         <p>Earnings-Based Valuation And Technical Analysis.</p>
       </div>
