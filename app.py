@@ -446,21 +446,15 @@ def chart_figure(ticker, v, history_months):
                 font=dict(size=17), row=1, col=1,
             )
 
-    current_price = sf(df["Close"].iloc[-1]) if not df.empty else None
-    if current_price is not None:
-        fig.add_hline(
-            y=current_price, line_width=3, line_dash="dot", line_color="#90EE90",
-            annotation_text=f"CURRENT ${current_price:,.2f}",
-            annotation_position="right", row=1, col=1
-        )
-        fig.add_trace(go.Scatter(
-            x=[last_x], y=[current_price], name="Current Price",
-            mode="markers+text", text=[f"  ${current_price:,.2f}"],
-            textposition="middle right",
-            marker=dict(size=18, line=dict(width=3, color="white")),
-            textfont=dict(size=19), showlegend=False,
-            hovertemplate=f"Current Price: ${current_price:,.2f}<extra></extra>"
-        ), row=1, col=1)
+    # Mark the live/current price with a subtle light-green dotted reference line.
+    current_price = sf(v.get("Current Price"))
+    if not current_price or current_price <= 0:
+        current_price = float(df["Close"].dropna().iloc[-1])
+    fig.add_hline(
+        y=current_price, line_dash="dash", line_width=3, line_color="#90EE90",
+        annotation_text=f"Current Price ${current_price:,.2f}",
+        annotation_position="right", row=1, col=1
+    )
 
     original_fv = sf(v.get("Original Fair Value"))
     relative_fv = sf(v.get("Relative Fair Value"))
