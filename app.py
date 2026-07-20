@@ -12,7 +12,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
 
-st.set_page_config(page_title="Stock Analyzer", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Stock_EPS_Fair_Value_Tool", page_icon="📈", layout="wide")
 
 # Keep the app at the top after an initial load or Streamlit rerun.
 # NOTE: components.html() only re-executes its embedded <script> when the
@@ -532,8 +532,8 @@ def valuation(ticker: str, manual_growth=None, manual_pe=None):
     signal = signal_from_value_and_timing(current, original, timing_score)
 
     return {
-        "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Original Fair Value": original,
-        "Timing Score": timing_score, "Signal": normalize_signal(signal),
+        "Ticker": ticker, "Company Name": info.get("longName") or info.get("shortName") or ticker, "Price": current, "Fair Value": original,
+        "Score": timing_score, "Signal": normalize_signal(signal),
         "P/E": pe, "Trailing EPS": trailing, "Forward EPS": forward,
         "EPS Growth %": growth, "Annual Dividend": annual_div,
         "Dividend Yield %": div_yield, "52W Low": low52, "52W High": high52,
@@ -549,7 +549,7 @@ def scan_group(tickers_tuple):
         try:
             v = valuation(ticker)
             rows.append({k: v[k] for k in [
-                "Ticker", "Company Name", "Price", "Original Fair Value", "Timing Score", "Signal",
+                "Ticker", "Company Name", "Price", "Fair Value", "Score", "Signal",
                 "P/E", "Forward EPS", "Dividend Yield %", "52W Low", "52W High"
             ]})
         except Exception:
@@ -919,8 +919,8 @@ def render_navigation(key_prefix="nav"):
 
 def render_homepage():
     st.markdown('<div class="section-title">MAJOR MARKETS</div><div class="section-copy"></div>', unsafe_allow_html=True)
-    market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("VIX","^VIX"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
-    market_cols = st.columns(7)
+    market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
+    market_cols = st.columns(6)
     for col, (label, symbol) in zip(market_cols, market_assets):
         with col:
             try:
@@ -954,8 +954,8 @@ def render_homepage():
     <section class="hero">
       <div class="hero-copy">
         <span class="eyebrow">Research • Valuation • Technicals</span>
-        <h1>STOCK ANALYZER</h1>
-        <p>Earnings-Based Valuation And Technical Analysis.</p>
+        <h1>STOCK FAIR VALUE TOOL</h1>
+        <p>Check stocks, Bitcoin, major indexes and oil, then move directly into earnings-based valuation and technical analysis.</p>
       </div>
       <div class="market-card">
         <div class="ticker"><div><div style="opacity:.62;font-size:.78rem">MARKET INTELLIGENCE</div><b>Quote → Valuation → Decision</b></div></div>
@@ -1285,8 +1285,8 @@ if active_section == "Watchlists":
             column_config={
                 "Symbol": st.column_config.TextColumn(width=100),
                 "Price": st.column_config.NumberColumn(format="$%.2f", width=105),
-                "Timing Score": st.column_config.NumberColumn(format="%d", width=110),
-                "Original Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
+                "Score": st.column_config.NumberColumn(format="%d", width=110),
+                "Fair Value": st.column_config.NumberColumn(format="$%.2f", width=155),
                 "Signal": st.column_config.TextColumn(width=115),
                 "P/E": st.column_config.NumberColumn(format="%.2f", width=90),
                 "Forward EPS": st.column_config.NumberColumn(format="%.2f", width=125),
