@@ -947,11 +947,12 @@ def render_homepage():
                     unsafe_allow_html=True,
                 )
 
+    render_navigation("home_nav")
+
     st.markdown("""
     <section class="hero">
       <div class="hero-copy">
-        <span class="eyebrow">Research • Valuation • Technicals</span>    render_navigation("home_nav")
-
+        <span class="eyebrow">Research • Valuation • Technicals</span>
         <h1>STOCK ANALYZER</h1>
         <p>Earnings-Based Valuation And Technical Analysis.</p>
       </div>
