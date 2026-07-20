@@ -739,12 +739,6 @@ def compact_number(value):
             return f"{value/divisor:,.2f}{unit}"
     return f"{value:,.0f}"
 
-def go_to_chart(ticker_symbol):
-    st.session_state.selected_ticker = ticker_symbol
-    st.session_state.options_ticker = ticker_symbol
-    st.session_state.active_section = "Price vs EPS"
-
-
 def render_navigation(key_prefix="nav"):
     nav_columns = st.columns(len(section_names), gap="small")
     for nav_col, (icon, section_name) in zip(nav_columns, section_names):
@@ -827,25 +821,12 @@ def render_homepage():
             change_text = "N/A" if q["change"] is None else f'{q["change"]:+.2f}'
             change_pct_text = "N/A" if q["change_pct"] is None else f'{q["change_pct"]:+.2f}%'
             exchange_line = " • ".join(x for x in [q.get("exchange"), q.get("currency")] if x)
-            header_col, button_col = st.columns([5, 2], vertical_alignment="center")
-            with header_col:
-                st.markdown(
-                    f"""
-                    <div style="font-size:1.55rem;font-weight:800;letter-spacing:-.02em">{symbol_company(q['ticker'])}</div>
-                    <div style="opacity:.65;font-size:.84rem;margin-top:2px">{exchange_line}</div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-            with button_col:
-                if st.button(f'Analyze {q["ticker"]} in Full Dashboard →', type="primary", use_container_width=True, key="home_analyze_quote"):
-                    st.session_state.selected_ticker = q["ticker"]
-                    st.session_state.options_ticker = q["ticker"]
-                    st.session_state.active_section = "Price vs EPS"
-                    st.rerun()
             st.markdown(
                 f"""
                 <div style="padding:22px 24px;border:1px solid rgba(128,128,128,.24);border-radius:16px;background:rgba(128,128,128,.035);margin:8px 0 18px">
-                  <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
+                  <div style="font-size:1.55rem;font-weight:800;letter-spacing:-.02em">{symbol_company(q['ticker'])}</div>
+                  <div style="opacity:.65;font-size:.84rem;margin-top:2px">{exchange_line}</div>
+                  <div style="display:flex;align-items:baseline;gap:14px;margin-top:14px;flex-wrap:wrap">
                     <span style="font-size:2.75rem;font-weight:850;letter-spacing:-.045em">{money(q['price'])}</span>
                     <span style="font-size:1.08rem;font-weight:750">{change_text} ({change_pct_text})</span>
                   </div>
@@ -864,18 +845,7 @@ def render_homepage():
                     ("52 Week Range", "N/A" if q["week52_low"] is None or q["week52_high"] is None else f'{money(q["week52_low"])} - {money(q["week52_high"])}'),
                 ]
                 for label, value in left_rows:
-                    st.markdown(
-                        f"""
-                        <div style="display:flex;justify-content:space-between;align-items:center;
-                                    margin:.35rem 0;color:#000000 !important;
-                                    font-weight:900 !important;">
-                            <span style="color:#000000 !important;font-weight:900 !important;">{label}</span>
-                            <span style="color:#000000 !important;font-weight:900 !important;">{value}</span>
-                        </div>
-                        <hr style="margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)">
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                    st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
             with right_stats:
                 dividend_text = "N/A" if q["dividend_rate"] is None else f'{money(q["dividend_rate"])} ({q["dividend_yield"]:.2f}%)'
                 right_rows = [
@@ -889,20 +859,30 @@ def render_homepage():
                     ("Forward Dividend & Yield", dividend_text),
                 ]
                 for label, value in right_rows:
-                    st.markdown(
-                        f"""
-                        <div style="display:flex;justify-content:space-between;align-items:center;
-                                    margin:.35rem 0;color:#000000 !important;
-                                    font-weight:900 !important;">
-                            <span style="color:#000000 !important;font-weight:900 !important;">{label}</span>
-                            <span style="color:#000000 !important;font-weight:900 !important;">{value}</span>
-                        </div>
-                        <hr style="margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)">
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                    st.markdown(f"**{label}** <span style='float:right'>{value}</span><hr style='margin:.38rem 0;border:none;border-top:1px solid rgba(128,128,128,.18)'>", unsafe_allow_html=True)
+            if st.button(f'Analyze {q["ticker"]} in Full Dashboard →', type="primary", key="home_analyze_quote"):
+                st.session_state.selected_ticker = q["ticker"]
+                st.session_state.options_ticker = q["ticker"]
+                st.session_state.active_section = "Price vs EPS"
+                st.rerun()
         except Exception as exc:
             st.warning(f"Quote unavailable for {quote_ticker}: {exc}")
+
+    st.markdown('<div class="section-title">Top 10 most actively traded</div><div class="section-copy">Ranked by reported trading volume. Click a symbol to update the instant quote.</div>', unsafe_allow_html=True)
+    try:
+        active = most_active_quotes()
+        for rank, row in enumerate(active, 1):
+            a,b,c,d,e = st.columns([.5,1.2,3,1.4,1.2])
+            a.write(f"**{rank}**")
+            if b.button(symbol_company(row["ticker"]), key=f"active_{rank}_{row['ticker']}", use_container_width=True):
+                st.session_state.home_quote_ticker = row["ticker"]
+                st.rerun()
+            c.write(row["name"] or "Name unavailable")
+            d.write(money(row["price"]))
+            pct = row.get("change_pct")
+            e.write("N/A" if pct is None else f"{pct:+.2f}%")
+    except Exception as exc:
+        st.info(f"Most-active data is temporarily unavailable: {exc}")
 
 
 init_db()
@@ -1019,9 +999,9 @@ if active_section == "Price vs EPS":
         st.info("Enter a symbol above, then select Analyze.")
 
 if active_section == "Watchlists":
-    st.session_state.setdefault("watchlist_category", "Most Active")
+    st.session_state.setdefault("watchlist_category", list(CATEGORY_LISTS)[0])
     st.subheader("Watchlists")
-    category_names = ["Most Active"] + list(CATEGORY_LISTS)
+    category_names = list(CATEGORY_LISTS)
     category_cols = st.columns(len(category_names), gap="small")
     for category_col, category_name in zip(category_cols, category_names):
         with category_col:
@@ -1034,12 +1014,7 @@ if active_section == "Watchlists":
                 st.session_state.watchlist_category = category_name
                 st.rerun()
     category = st.session_state.watchlist_category
-    if category == "Most Active":
-        with st.spinner("Loading most actively traded stocks..."):
-            tickers = [row["ticker"] for row in most_active_quotes()]
-        st.caption("Ranked by reported trading volume. Click any row to load that ticker directly into the chart and Options Finder.")
-    else:
-        tickers = CATEGORY_LISTS[category]
+    tickers = CATEGORY_LISTS[category]
     with st.spinner(f"Loading {category}..."):
         watch_df = scan_group(tuple(tickers))
     if category == "Warren Buffett":
@@ -1048,7 +1023,7 @@ if active_section == "Watchlists":
             f"Portfolio percentages are based on Berkshire Hathaway's latest disclosed 13F holdings "
             f"as of {BUFFETT_13F_REPORT_DATE}. Click any row to load that ticker."
         )
-    elif category != "Most Active":
+    else:
         st.caption("Click any row to load that ticker directly into the chart and Options Finder.")
     watch_df = watch_df.rename(columns={"Dividend Yield %": "Div.Yield %"})
     if "Signal" in watch_df.columns:
