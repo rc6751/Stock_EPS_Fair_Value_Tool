@@ -1070,7 +1070,7 @@ if active_section == "Price vs EPS":
             fair_value = v.get("Fair Value")
             upside = ((fair_value / price) - 1) * 100 if price and fair_value else None
 
-            # Compact custom 180-degree meter styled like the approved dashboard mockup.
+            # Price-vs-value dashboard: 180-degree timing meter plus complete metrics.
             safe_score = max(0.0, min(100.0, score))
             needle_angle = -90.0 + (safe_score * 1.8)
             signal_color = {
@@ -1085,129 +1085,208 @@ if active_section == "Price vs EPS":
             fair_value_text = f"${fair_value:,.2f}" if fair_value is not None else "N/A"
             upside_text = f"{upside:+.2f}%" if upside is not None else "N/A"
             dividend_text = f"{v['Dividend Yield %']:.2f}%" if v.get("Dividend Yield %") is not None else "N/A"
-            eps_text = f"${v['Trailing EPS']:,.2f}" if v.get("Trailing EPS") is not None else "N/A"
+            trailing_eps_text = f"${v['Trailing EPS']:,.2f}" if v.get("Trailing EPS") is not None else "N/A"
+            forward_eps_text = f"${v['Forward EPS']:,.2f}" if v.get("Forward EPS") is not None else "N/A"
+            eps_growth_text = f"{v['EPS Growth %']:+.2f}%" if v.get("EPS Growth %") is not None else "N/A"
             pe_text_display = f"{v['P/E']:,.2f}" if v.get("P/E") is not None else "N/A"
+            upside_color = "#22c55e" if upside is not None and upside >= 0 else "#ef4444"
 
             meter_html = f"""
             <style>
               * {{ box-sizing: border-box; }}
-              .valuation-card {{
+              body {{ margin: 0; background: transparent; }}
+              .pv-card {{
                 width: 100%;
-                min-height: 258px;
-                padding: 18px 22px;
+                height: 350px;
+                overflow: hidden;
+                padding: 16px 18px 14px;
                 border-radius: 18px;
-                background: linear-gradient(145deg, #0b2a5b 0%, #071d42 100%);
-                border: 1px solid rgba(96,165,250,.22);
-                box-shadow: 0 12px 30px rgba(2,8,23,.34);
                 color: #f8fafc;
+                background:
+                  radial-gradient(circle at 19% 20%, rgba(37,99,235,.34), transparent 34%),
+                  linear-gradient(145deg, #0b2a5b 0%, #071a39 58%, #06142c 100%);
+                border: 1px solid rgba(96,165,250,.28);
+                box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 14px 34px rgba(2,8,23,.38);
                 font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+              }}
+              .pv-head {{
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                margin-bottom: 5px;
+              }}
+              .pv-title {{ font-size: 20px; font-weight: 900; letter-spacing: -.02em; }}
+              .pv-subtitle {{ margin-top: 2px; color: #93c5fd; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }}
+              .pv-signal {{
+                border-radius: 999px;
+                padding: 6px 13px;
+                font-size: 12px;
+                font-weight: 900;
+                letter-spacing: .12em;
+                color: {signal_color};
+                background: rgba(15,23,42,.58);
+                border: 1px solid {signal_color};
+              }}
+              .pv-main {{
                 display: grid;
-                grid-template-columns: minmax(330px, 1.15fr) minmax(280px, .85fr);
-                gap: 24px;
+                grid-template-columns: minmax(355px, 1.15fr) minmax(300px, .85fr);
+                gap: 18px;
                 align-items: center;
               }}
-              .meter-title {{
-                margin: 0 0 2px 0;
-                text-align: center;
-                font-size: 20px;
-                font-weight: 800;
-                letter-spacing: .01em;
+              .gauge-shell {{
+                position: relative;
+                width: 100%;
+                max-width: 440px;
+                height: 202px;
+                margin: -3px auto 0;
               }}
-              .meter-subtitle {{
-                margin: 0 0 3px 0;
-                text-align: center;
-                color: #94a3b8;
-                font-size: 12px;
-              }}
-              .gauge-wrap {{ position: relative; width: 100%; max-width: 430px; height: 190px; margin: 0 auto; }}
               .gauge-svg {{ width: 100%; height: 100%; overflow: visible; }}
-              .gauge-score {{
+              .score-center {{
                 position: absolute;
+                top: 108px;
                 left: 50%;
-                top: 112px;
                 transform: translateX(-50%);
                 text-align: center;
                 line-height: 1;
               }}
-              .gauge-score .number {{ font-size: 43px; font-weight: 900; letter-spacing: -.04em; }}
-              .gauge-score .signal {{ margin-top: 7px; font-size: 14px; font-weight: 900; color: {signal_color}; letter-spacing: .12em; }}
-              .metric-panel {{
+              .score-number {{ font-size: 49px; font-weight: 950; letter-spacing: -.055em; text-shadow: 0 3px 15px rgba(0,0,0,.38); }}
+              .score-label {{ margin-top: 7px; color: #bfdbfe; font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }}
+              .zone-row {{
+                display: flex;
+                justify-content: space-between;
+                padding: 0 32px;
+                margin-top: -12px;
+                color: #cbd5e1;
+                font-size: 10px;
+                font-weight: 800;
+                letter-spacing: .04em;
+              }}
+              .metric-grid {{
                 display: grid;
                 grid-template-columns: 1fr 1fr;
-                gap: 10px 12px;
+                gap: 9px;
               }}
-              .metric-box {{
-                padding: 11px 13px;
+              .metric {{
+                min-height: 62px;
+                padding: 10px 12px;
                 border-radius: 12px;
-                background: rgba(15, 23, 42, .52);
-                border: 1px solid rgba(148,163,184,.15);
+                background: linear-gradient(145deg, rgba(15,23,42,.74), rgba(15,23,42,.46));
+                border: 1px solid rgba(148,163,184,.16);
+                box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
               }}
-              .metric-label {{ color: #94a3b8; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }}
-              .metric-value {{ margin-top: 4px; color: #f8fafc; font-size: 19px; font-weight: 850; white-space: nowrap; }}
-              .metric-value.accent {{ color: #60a5fa; }}
-              .metric-value.upside {{ color: {'#22c55e' if upside is not None and upside >= 0 else '#ef4444'}; }}
+              .metric-label {{ color: #94a3b8; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }}
+              .metric-value {{ margin-top: 4px; font-size: 18px; font-weight: 900; white-space: nowrap; }}
+              .blue {{ color: #60a5fa; }}
+              .upside {{ color: {upside_color}; }}
+              .fund-row {{
+                display: grid;
+                grid-template-columns: repeat(5, 1fr);
+                gap: 9px;
+                margin-top: 10px;
+              }}
+              .fund {{
+                min-width: 0;
+                padding: 9px 10px;
+                border-radius: 11px;
+                text-align: center;
+                background: rgba(6,18,42,.62);
+                border: 1px solid rgba(96,165,250,.15);
+              }}
+              .fund-label {{ color: #94a3b8; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }}
+              .fund-value {{ margin-top: 4px; font-size: 15px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
               @media (max-width: 760px) {{
-                .valuation-card {{ grid-template-columns: 1fr; padding: 16px; }}
-                .gauge-wrap {{ max-width: 390px; }}
+                .pv-card {{ height: auto; min-height: 575px; }}
+                .pv-main {{ grid-template-columns: 1fr; gap: 0; }}
+                .gauge-shell {{ max-width: 390px; }}
+                .fund-row {{ grid-template-columns: repeat(2, 1fr); }}
               }}
             </style>
-            <div class="valuation-card">
-              <div>
-                <div class="meter-title">Valuation Timing</div>
-                <div class="meter-subtitle">Timing Score</div>
-                <div class="gauge-wrap">
-                  <svg class="gauge-svg" viewBox="0 0 430 210" role="img" aria-label="Timing score {safe_score:.0f} out of 100">
-                    <defs>
-                      <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
-                        <feGaussianBlur stdDeviation="3.5" result="blur"/>
-                        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-                      </filter>
-                    </defs>
-                    <path d="M 48 172 A 167 167 0 0 1 103 64" fill="none" stroke="#ef4444" stroke-width="28" stroke-linecap="butt"/>
-                    <path d="M 103 64 A 167 167 0 0 1 181 22" fill="none" stroke="#f97316" stroke-width="28" stroke-linecap="butt"/>
-                    <path d="M 181 22 A 167 167 0 0 1 273 31" fill="none" stroke="#facc15" stroke-width="28" stroke-linecap="butt"/>
-                    <path d="M 273 31 A 167 167 0 0 1 382 172" fill="none" stroke="#22c55e" stroke-width="28" stroke-linecap="butt"/>
 
-                    <g stroke="#dbeafe" stroke-width="2" opacity=".9">
-                      <line x1="48" y1="172" x2="64" y2="172"/>
-                      <line x1="74" y1="93" x2="88" y2="101"/>
-                      <line x1="131" y1="38" x2="139" y2="52"/>
-                      <line x1="215" y1="5" x2="215" y2="22"/>
-                      <line x1="299" y1="38" x2="291" y2="52"/>
-                      <line x1="356" y1="93" x2="342" y2="101"/>
-                      <line x1="382" y1="172" x2="366" y2="172"/>
-                    </g>
-                    <g fill="#cbd5e1" font-size="11" font-weight="700" text-anchor="middle">
-                      <text x="42" y="195">0</text>
-                      <text x="82" y="79">20</text>
-                      <text x="142" y="26">40</text>
-                      <text x="288" y="27">60</text>
-                      <text x="348" y="79">80</text>
-                      <text x="388" y="195">100</text>
-                    </g>
-                    <g transform="rotate({needle_angle:.2f} 215 172)" filter="url(#glow)">
-                      <polygon points="215,38 207,171 223,171" fill="#f8fafc"/>
-                    </g>
-                    <circle cx="215" cy="172" r="16" fill="#e2e8f0"/>
-                    <circle cx="215" cy="172" r="8" fill="#334155"/>
-                  </svg>
-                  <div class="gauge-score">
-                    <div class="number">{safe_score:.0f}</div>
-                    <div class="signal">{signal}</div>
+            <div class="pv-card">
+              <div class="pv-head">
+                <div>
+                  <div class="pv-title">Price vs. Fair Value</div>
+                  <div class="pv-subtitle">Valuation and timing dashboard</div>
+                </div>
+                <div class="pv-signal">{signal}</div>
+              </div>
+
+              <div class="pv-main">
+                <div>
+                  <div class="gauge-shell">
+                    <svg class="gauge-svg" viewBox="0 0 440 215" role="img" aria-label="Timing score {safe_score:.0f} out of 100">
+                      <defs>
+                        <filter id="needleGlow" x="-40%" y="-40%" width="180%" height="180%">
+                          <feGaussianBlur stdDeviation="3.2" result="blur"/>
+                          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                        </filter>
+                        <linearGradient id="hub" x1="0" x2="1" y1="0" y2="1">
+                          <stop offset="0" stop-color="#f8fafc"/>
+                          <stop offset="1" stop-color="#64748b"/>
+                        </linearGradient>
+                      </defs>
+
+                      <path d="M 48 180 A 172 172 0 0 1 103 65" fill="none" stroke="#ef4444" stroke-width="31"/>
+                      <path d="M 103 65 A 172 172 0 0 1 178 22" fill="none" stroke="#f97316" stroke-width="31"/>
+                      <path d="M 178 22 A 172 172 0 0 1 279 31" fill="none" stroke="#facc15" stroke-width="31"/>
+                      <path d="M 279 31 A 172 172 0 0 1 392 180" fill="none" stroke="#22c55e" stroke-width="31"/>
+
+                      <path d="M 65 180 A 155 155 0 0 1 375 180" fill="none" stroke="rgba(255,255,255,.09)" stroke-width="2"/>
+
+                      <g stroke="#e0f2fe" stroke-width="2.2" opacity=".95">
+                        <line x1="48" y1="180" x2="65" y2="180"/>
+                        <line x1="61" y1="115" x2="77" y2="121"/>
+                        <line x1="99" y1="61" x2="112" y2="73"/>
+                        <line x1="157" y1="27" x2="163" y2="44"/>
+                        <line x1="220" y1="10" x2="220" y2="28"/>
+                        <line x1="283" y1="27" x2="277" y2="44"/>
+                        <line x1="341" y1="61" x2="328" y2="73"/>
+                        <line x1="379" y1="115" x2="363" y2="121"/>
+                        <line x1="392" y1="180" x2="375" y2="180"/>
+                      </g>
+
+                      <g fill="#bfdbfe" font-size="10" font-weight="800" text-anchor="middle">
+                        <text x="42" y="204">0</text>
+                        <text x="96" y="49">25</text>
+                        <text x="220" y="7">50</text>
+                        <text x="344" y="49">75</text>
+                        <text x="398" y="204">100</text>
+                      </g>
+
+                      <g transform="rotate({needle_angle:.2f} 220 180)" filter="url(#needleGlow)">
+                        <polygon points="220,42 213,178 227,178" fill="#f8fafc"/>
+                      </g>
+                      <circle cx="220" cy="180" r="18" fill="url(#hub)" stroke="#e2e8f0" stroke-width="2"/>
+                      <circle cx="220" cy="180" r="8" fill="#172554"/>
+                    </svg>
+                    <div class="score-center">
+                      <div class="score-number">{safe_score:.0f}</div>
+                      <div class="score-label">Timing Score</div>
+                    </div>
+                  </div>
+                  <div class="zone-row">
+                    <span>WEAK</span><span>NEUTRAL</span><span>STRONG</span>
                   </div>
                 </div>
+
+                <div class="metric-grid">
+                  <div class="metric"><div class="metric-label">Price</div><div class="metric-value blue">{price_text}</div></div>
+                  <div class="metric"><div class="metric-label">Fair Value</div><div class="metric-value">{fair_value_text}</div></div>
+                  <div class="metric"><div class="metric-label">Upside / Downside</div><div class="metric-value upside">{upside_text}</div></div>
+                  <div class="metric"><div class="metric-label">Dividend Yield</div><div class="metric-value">{dividend_text}</div></div>
+                </div>
               </div>
-              <div class="metric-panel">
-                <div class="metric-box"><div class="metric-label">Price</div><div class="metric-value accent">{price_text}</div></div>
-                <div class="metric-box"><div class="metric-label">Fair Value</div><div class="metric-value">{fair_value_text}</div></div>
-                <div class="metric-box"><div class="metric-label">Upside / Downside</div><div class="metric-value upside">{upside_text}</div></div>
-                <div class="metric-box"><div class="metric-label">Dividend Yield</div><div class="metric-value">{dividend_text}</div></div>
-                <div class="metric-box"><div class="metric-label">EPS (TTM)</div><div class="metric-value">{eps_text}</div></div>
-                <div class="metric-box"><div class="metric-label">P/E Ratio</div><div class="metric-value">{pe_text_display}</div></div>
+
+              <div class="fund-row">
+                <div class="fund"><div class="fund-label">Trailing EPS</div><div class="fund-value">{trailing_eps_text}</div></div>
+                <div class="fund"><div class="fund-label">Forward EPS</div><div class="fund-value">{forward_eps_text}</div></div>
+                <div class="fund"><div class="fund-label">EPS Growth</div><div class="fund-value">{eps_growth_text}</div></div>
+                <div class="fund"><div class="fund-label">P/E Ratio</div><div class="fund-value">{pe_text_display}</div></div>
+                <div class="fund"><div class="fund-label">Signal</div><div class="fund-value" style="color:{signal_color}">{signal}</div></div>
               </div>
             </div>
             """
-            components.html(meter_html, height=286, scrolling=False)
+            components.html(meter_html, height=370, scrolling=False)
 
             st.plotly_chart(
                 chart_figure(ticker, v, history_months),
