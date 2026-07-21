@@ -179,9 +179,12 @@ CATEGORY_LISTS = {
         "AAPL","AXP","KO","BAC","CVX","OXY","GOOGL","CB","MCO","KHC","DVA","KR","SIRI","DAL","VRSN","COF","NYT","ALLY","GOOG","LLYVK","LEN","NUE","LLYVA","LPX","STZ","NVR","M","LEN-B","JEF"
     ],
     "SOXL": ["NVDA", "AVGO", "AMD", "TSM", "QCOM", "TXN", "MU", "ADI", "MRVL", "AMAT", "KLAC", "LRCX"],
-    "Space Stocks": [
-        "RKLB","LUNR","RDW","ASTS","PL","BKSY","SIDU","SATL","IRDM","SPIR",
-        "VSAT","GSAT","MNTS","ASTR","MAXR"
+    "Banks": [
+        "JPM","BAC","WFC","C","GS","MS","USB","PNC","TFC","COF",
+        "SCHW","BK","STT","RF","FITB","KEY","HBAN","CFG","ALLY","CMA"
+    ],
+    "Phone Companies": [
+        "T","VZ","TMUS","USM","BCE","TU"
     ],
 }
 
@@ -916,8 +919,8 @@ def render_navigation(key_prefix="nav"):
 
 def render_homepage():
     st.markdown('<div class="section-title">MAJOR MARKETS</div><div class="section-copy"></div>', unsafe_allow_html=True)
-    market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("VIX","^VIX"),("Bitcoin","BTC-USD"),("WTI Oil","CL=F")]
-    market_cols = st.columns(7)
+    market_assets = [("S&P 500","^GSPC"),("S&P 500 E-mini Futures","ES=F"),("Nasdaq","^IXIC"),("Dow","^DJI"),("VIX","^VIX"),("Bitcoin","BTC-USD"),("ETH","ETH-USD"),("WTI Oil","CL=F")]
+    market_cols = st.columns(8)
     for col, (label, symbol) in zip(market_cols, market_assets):
         with col:
             try:
@@ -1087,7 +1090,7 @@ if active_section == "Price vs EPS":
         st.info("Enter a symbol above, then select Analyze.")
 
 if active_section == "Watchlists":
-    st.session_state.setdefault("watchlist_category", "Most Active")
+    st.session_state.setdefault("watchlist_category", "Top Buys")
     st.subheader("Watchlists")
     st.markdown("""
     <style>
@@ -1101,7 +1104,7 @@ if active_section == "Watchlists":
     </style>
     """, unsafe_allow_html=True)
 
-    category_names = ["Most Active", "Top Buys"] + list(CATEGORY_LISTS)
+    category_names = ["Top Buys"] + list(CATEGORY_LISTS)
     with st.container(key="watchlist_tabs"):
         category_cols = st.columns(len(category_names), gap="small")
         for category_col, category_name in zip(category_cols, category_names):
@@ -1117,7 +1120,7 @@ if active_section == "Watchlists":
 
     category = st.session_state.watchlist_category
 
-    if category == "Most Active":
+    if False:
         with st.spinner("Loading most actively traded stocks..."):
             tickers = [row["ticker"] for row in most_active_quotes()]
         with st.spinner(f"Loading {category}..."):
