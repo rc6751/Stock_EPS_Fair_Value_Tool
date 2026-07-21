@@ -183,7 +183,7 @@ CATEGORY_LISTS = {
         "JPM","BAC","WFC","C","GS","MS","USB","PNC","TFC","COF",
         "SCHW","BK","STT","RF","FITB","KEY","HBAN","CFG","ALLY","CMA"
     ],
-    "Phone Companies": [
+    "Telecom": [
         "T","VZ","TMUS","USM","BCE","TU"
     ],
 }
@@ -1559,85 +1559,155 @@ if active_section == "Backtesting":
 
 if active_section == "Options Finder":
     st.subheader("Options Finder")
-    o1, o2, o3, o4, o5 = st.columns(5)
-    oticker = o1.text_input("Ticker", key="options_ticker").upper().strip()
-    side_label = o2.selectbox("Contracts", ["Puts", "Calls"])
-    min_ann = o3.number_input("Min annual return %", value=24.0, step=1.0)
-    max_ann = o4.number_input("Max annual return %", value=30.0, step=1.0)
-    min_volume = o5.number_input("Minimum volume", value=25, min_value=0, step=1)
-    d1, d2, d3 = st.columns(3)
+    st.caption("Scans put contracts only for stocks currently rated BUY across every watchlist tab.")
+
+    o1, o2, o3, o4 = st.columns(4)
+    min_ann = o1.number_input("Min annual return %", value=24.0, step=1.0)
+    max_ann = o2.number_input("Max annual return %", value=30.0, step=1.0)
+    min_volume = o3.number_input("Minimum volume", value=25, min_value=0, step=1)
+    min_open_interest = o4.number_input("Minimum open interest", value=100, min_value=0, step=25)
+
+    d1, d2, d3, d4 = st.columns(4)
     min_dte = d1.number_input("Min DTE", value=30, min_value=0, step=1)
     max_dte = d2.number_input("Max DTE", value=45, min_value=1, step=1)
     max_delta = d3.number_input("Maximum absolute Delta", value=0.18, min_value=0.01, max_value=1.0, step=0.01)
+    max_spread_pct = d4.number_input("Maximum bid-ask spread %", value=20.0, min_value=0.0, step=1.0)
 
-    action_col, price_col, spacer_col = st.columns([1.1, 1.25, 4.65])
-    find_options = action_col.button("Find Options", type="primary", use_container_width=True)
+    scan_options = st.button("Scan BUY-Rated Puts", type="primary", use_container_width=True)
 
-    current_option_price = None
-    if oticker:
-        st.caption(symbol_company(oticker))
-        try:
-            current_option_price = quick_quote(oticker)["price"]
-        except Exception:
-            current_option_price = None
-    price_col.metric(
-        "Current Stock Price",
-        f"${current_option_price:,.2f}" if current_option_price is not None else "—",
-    )
+    if scan_options:
+        if min_dte > max_dte:
+            st.error("Min DTE cannot be greater than Max DTE.")
+        elif min_ann > max_ann:
+            st.error("Minimum annual return cannot be greater than maximum annual return.")
+        else:
+            try:
+                watchlist_groups = {}
 
-    if find_options:
-        try:
-            spot = current_option_price or valuation(oticker)["Price"]
-            expirations = option_expirations(oticker)
-            rows = []
-            today = date.today()
-            side = side_label.lower()
-            for exp in expirations:
-                exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
-                dte = (exp_date - today).days
-                if dte < min_dte or dte > max_dte:
-                    continue
-                chain = option_chain(oticker, exp, side)
-                for _, r in chain.iterrows():
-                    bid, ask = sf(r.get("bid")), sf(r.get("ask"))
-                    strike = sf(r.get("strike"))
-                    volume = sf(r.get("volume")) or 0
-                    iv = sf(r.get("impliedVolatility"))
-                    if bid is None or ask is None or strike is None or ask < bid or volume < min_volume:
-                        continue
-                    mid_price = (bid + ask) / 2
-                    if mid_price <= 0:
-                        continue
-                    delta = option_delta_estimate(spot, strike, dte, iv, side)
-                    if delta is not None and abs(delta) > max_delta:
-                        continue
-                    collateral = strike if side == "puts" else spot
-                    ann_return = (mid_price / collateral) * (365 / dte) * 100 if collateral and dte else None
-                    if ann_return is None or not (min_ann <= ann_return <= max_ann):
-                        continue
-                    breakeven = strike - mid_price if side == "puts" else strike + mid_price
-                    rows.append({
-                        "Ticker": oticker, "Company Name": company_name(oticker),
-                        "Expiration": exp, "DTE": dte, "Strike": strike,
-                        "Bid": bid, "Ask": ask, "Mid": mid_price, "Delta": delta,
-                        "IV %": iv * 100 if iv else None, "Volume": int(volume),
-                        "Open Interest": int(sf(r.get("openInterest")) or 0),
-                        "Ann. Return %": ann_return, "Break-even": breakeven,
-                        "Contract": r.get("contractSymbol"),
+                with st.spinner("Finding BUY-rated stocks in each watchlist..."):
+                    top_buy_pool = most_active_symbols(count=100)
+                    top_buy_scan = scan_group(tuple(top_buy_pool))
+                    top_buy_tickers = top_buy_scan.loc[top_buy_scan["Signal"] == "BUY", "Ticker"].dropna().tolist()
+                    watchlist_groups["Top Buys"] = top_buy_tickers
+
+                    for category_name, category_tickers in CATEGORY_LISTS.items():
+                        category_scan = scan_group(tuple(category_tickers))
+                        buy_tickers = category_scan.loc[category_scan["Signal"] == "BUY", "Ticker"].dropna().tolist()
+                        watchlist_groups[category_name] = buy_tickers
+
+                rows = []
+                today = date.today()
+                total_buy_candidates = sum(len(v) for v in watchlist_groups.values())
+
+                progress = st.progress(0)
+                status = st.empty()
+                completed = 0
+
+                for watchlist_name, buy_tickers in watchlist_groups.items():
+                    for scan_ticker in buy_tickers:
+                        status.caption(f"Scanning {watchlist_name}: {scan_ticker}")
+                        completed += 1
+                        progress.progress(min(completed / max(total_buy_candidates, 1), 1.0))
+
+                        try:
+                            spot = quick_quote(scan_ticker)["price"] or valuation(scan_ticker)["Price"]
+                            if not spot:
+                                continue
+                            expirations = option_expirations(scan_ticker)
+
+                            for exp in expirations:
+                                exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+                                dte = (exp_date - today).days
+                                if dte < min_dte or dte > max_dte:
+                                    continue
+
+                                chain = option_chain(scan_ticker, exp, "puts")
+                                for _, r in chain.iterrows():
+                                    bid, ask = sf(r.get("bid")), sf(r.get("ask"))
+                                    strike = sf(r.get("strike"))
+                                    volume = sf(r.get("volume")) or 0
+                                    open_interest = sf(r.get("openInterest")) or 0
+                                    iv = sf(r.get("impliedVolatility"))
+
+                                    if (
+                                        bid is None or ask is None or strike is None or ask < bid
+                                        or volume < min_volume or open_interest < min_open_interest
+                                    ):
+                                        continue
+
+                                    mid_price = (bid + ask) / 2
+                                    if mid_price <= 0:
+                                        continue
+                                    spread_pct = ((ask - bid) / mid_price) * 100
+                                    if spread_pct > max_spread_pct:
+                                        continue
+
+                                    delta = option_delta_estimate(spot, strike, dte, iv, "puts")
+                                    if delta is not None and abs(delta) > max_delta:
+                                        continue
+
+                                    ann_return = (mid_price / strike) * (365 / dte) * 100 if strike and dte else None
+                                    if ann_return is None or not (min_ann <= ann_return <= max_ann):
+                                        continue
+
+                                    rows.append({
+                                        "Watchlist": watchlist_name,
+                                        "Ticker": scan_ticker,
+                                        "Company Name": company_name(scan_ticker),
+                                        "Stock Price": spot,
+                                        "Expiration": exp,
+                                        "DTE": dte,
+                                        "Strike": strike,
+                                        "Bid": bid,
+                                        "Ask": ask,
+                                        "Mid": mid_price,
+                                        "Delta": delta,
+                                        "IV %": iv * 100 if iv else None,
+                                        "Volume": int(volume),
+                                        "Open Interest": int(open_interest),
+                                        "Spread %": spread_pct,
+                                        "Ann. Return %": ann_return,
+                                        "Break-even": strike - mid_price,
+                                        "Contract": r.get("contractSymbol"),
+                                    })
+                        except Exception:
+                            continue
+
+                progress.empty()
+                status.empty()
+
+                results = pd.DataFrame(rows)
+                if results.empty:
+                    st.warning("No BUY-rated put contracts matched the current preset criteria.")
+                else:
+                    results = results.sort_values(
+                        ["Watchlist", "Ann. Return %", "Open Interest"],
+                        ascending=[True, False, False],
+                    ).reset_index(drop=True)
+
+                    st.success(
+                        f"Found {len(results)} matching put contracts from "
+                        f"{results['Ticker'].nunique()} BUY-rated stocks."
+                    )
+                    st.dataframe(results, use_container_width=True, hide_index=True, column_config={
+                        "Stock Price": st.column_config.NumberColumn(format="$%.2f"),
+                        "Strike": st.column_config.NumberColumn(format="$%.2f"),
+                        "Bid": st.column_config.NumberColumn(format="$%.2f"),
+                        "Ask": st.column_config.NumberColumn(format="$%.2f"),
+                        "Mid": st.column_config.NumberColumn(format="$%.2f"),
+                        "Delta": st.column_config.NumberColumn(format="%.3f"),
+                        "IV %": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Ann. Return %": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Break-even": st.column_config.NumberColumn(format="$%.2f"),
                     })
-            results = pd.DataFrame(rows).sort_values("Ann. Return %", ascending=False) if rows else pd.DataFrame()
-            if results.empty:
-                st.warning("No contracts matched the current filters.")
-            else:
-                st.dataframe(results, use_container_width=True, hide_index=True, column_config={
-                    "Strike": st.column_config.NumberColumn(format="$%.2f"), "Bid": st.column_config.NumberColumn(format="$%.2f"),
-                    "Ask": st.column_config.NumberColumn(format="$%.2f"), "Mid": st.column_config.NumberColumn(format="$%.2f"),
-                    "Delta": st.column_config.NumberColumn(format="%.3f"), "IV %": st.column_config.NumberColumn(format="%.2f%%"),
-                    "Ann. Return %": st.column_config.NumberColumn(format="%.2f%%"), "Break-even": st.column_config.NumberColumn(format="$%.2f")
-                })
-                st.download_button("Download CSV", results.to_csv(index=False), file_name=f"{oticker}_options.csv", mime="text/csv")
-        except Exception as exc:
-            st.error(f"Options search failed: {exc}")
+                    st.download_button(
+                        "Download CSV",
+                        results.to_csv(index=False),
+                        file_name="buy_rated_put_scan.csv",
+                        mime="text/csv",
+                    )
+            except Exception as exc:
+                st.error(f"Options scan failed: {exc}")
 
 st.divider()
 st.caption("Educational use only. This application does not provide investment advice or place brokerage orders.")
