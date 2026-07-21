@@ -978,7 +978,8 @@ def render_homepage():
 
 init_db()
 for key, value in {
-    "selected_ticker": "", "options_ticker": "", "manual_growth": "", "manual_pe": ""
+    "selected_ticker": "", "options_ticker": "", "manual_growth": "", "manual_pe": "",
+    "options_scan_active": False,
 }.items():
     st.session_state.setdefault(key, value)
 
@@ -990,6 +991,19 @@ if "pending_watchlist_ticker" in st.session_state:
         st.session_state.selected_ticker = pending_ticker
         st.session_state.options_ticker = pending_ticker
         st.session_state.active_section = "Price vs EPS"
+
+# Load a contract selected in Options Finder into the Option paper-trade ticket
+# before any widget using these keys is created.
+if "pending_paper_option" in st.session_state:
+    pending_option = st.session_state.pop("pending_paper_option")
+    st.session_state["paper_symbol_Option"] = str(pending_option.get("ticker", "")).upper().strip()
+    st.session_state["paper_action_Option"] = "SELL"
+    st.session_state["paper_qty_Option"] = float(pending_option.get("quantity", 1.0))
+    st.session_state["paper_price_Option"] = float(pending_option.get("premium", 0.0))
+    st.session_state["paper_date_Option"] = date.today()
+    st.session_state["paper_multiplier_Option"] = 100.0
+    st.session_state["paper_description_Option"] = str(pending_option.get("description", ""))
+    st.session_state.active_section = "Paper Trading"
 
 st.session_state.setdefault("active_section", "Home")
 
@@ -1272,6 +1286,7 @@ if active_section == "Paper Trading":
         def render_paper_trade_entry(asset_type):
             p1, p2, p3, p4, p5 = st.columns(5)
             default_symbol = st.session_state.selected_ticker if asset_type == "Stock" else ""
+            default_symbol = st.session_state.get(f"paper_symbol_{asset_type}", default_symbol)
             pticker = p1.text_input(
                 "Symbol",
                 value=default_symbol,
@@ -1597,8 +1612,10 @@ if active_section == "Options Finder":
 
     button_label = "Scan Symbol Puts" if scan_mode == "Single Symbol" else "Scan BUY-Rated Puts"
     scan_options = st.button(button_label, type="primary", use_container_width=True)
-
     if scan_options:
+        st.session_state.options_scan_active = True
+
+    if scan_options or st.session_state.get("options_scan_active", False):
         if scan_mode == "Single Symbol" and not single_symbol:
             st.error("Enter a ticker symbol before scanning.")
         elif min_dte > max_dte:
@@ -1630,6 +1647,8 @@ if active_section == "Options Finder":
                 rows = []
                 today = date.today()
                 total_candidates = sum(len(v) for v in watchlist_groups.values())
+                contracts_evaluated = 0
+                expirations_evaluated = 0
 
                 progress = st.progress(0)
                 status = st.empty()
@@ -1637,9 +1656,10 @@ if active_section == "Options Finder":
 
                 for watchlist_name, candidate_tickers in watchlist_groups.items():
                     for scan_ticker in candidate_tickers:
-                        status.caption(f"Scanning {watchlist_name}: {scan_ticker}")
-                        completed += 1
-                        progress.progress(min(completed / max(total_candidates, 1), 1.0))
+                        status.caption(
+                            f"Scanning {watchlist_name}: {scan_ticker} "
+                            f"({completed + 1} of {max(total_candidates, 1)})"
+                        )
 
                         try:
                             spot = quick_quote(scan_ticker)["price"] or valuation(scan_ticker)["Price"]
@@ -1653,7 +1673,10 @@ if active_section == "Options Finder":
                                 if dte < min_dte or dte > max_dte:
                                     continue
 
+                                expirations_evaluated += 1
                                 chain = option_chain(scan_ticker, exp, "puts")
+                                contracts_evaluated += len(chain)
+
                                 for _, r in chain.iterrows():
                                     bid, ask = sf(r.get("bid")), sf(r.get("ask"))
                                     strike = sf(r.get("strike"))
@@ -1682,10 +1705,32 @@ if active_section == "Options Finder":
                                     if ann_return is None or not (min_ann <= ann_return <= max_ann):
                                         continue
 
+                                    break_even = strike - mid_price
+                                    break_even_distance = ((spot - break_even) / spot) * 100 if spot else None
+                                    capital_required = strike * 100
+                                    probability_otm = (1 - abs(delta)) * 100 if delta is not None else None
+
+                                    # Balanced 0-100 score: return, delta safety, liquidity,
+                                    # spread quality, and break-even cushion.
+                                    return_score = max(0.0, min(100.0, (ann_return / max(max_ann, 1.0)) * 100))
+                                    delta_score = max(0.0, min(100.0, (1 - abs(delta or max_delta)) * 100))
+                                    liquidity_score = max(
+                                        0.0,
+                                        min(100.0, 50 * min(volume / max(min_volume, 1), 2) + 50 * min(open_interest / max(min_open_interest, 1), 2)) / 2,
+                                    )
+                                    spread_score = max(0.0, min(100.0, 100 * (1 - spread_pct / max(max_spread_pct, 0.01))))
+                                    cushion_score = max(0.0, min(100.0, (break_even_distance or 0) * 10))
+                                    trade_score = (
+                                        0.30 * return_score
+                                        + 0.25 * delta_score
+                                        + 0.20 * liquidity_score
+                                        + 0.15 * spread_score
+                                        + 0.10 * cushion_score
+                                    )
+
                                     rows.append({
-                                        "Watchlist": watchlist_name,
                                         "Ticker": scan_ticker,
-                                        "Company Name": company_name(scan_ticker),
+                                        "Trade Score": trade_score,
                                         "Stock Price": spot,
                                         "Expiration": exp,
                                         "DTE": dte,
@@ -1694,16 +1739,20 @@ if active_section == "Options Finder":
                                         "Ask": ask,
                                         "Mid": mid_price,
                                         "Delta": delta,
+                                        "Probability OTM %": probability_otm,
                                         "IV %": iv * 100 if iv else None,
                                         "Volume": int(volume),
                                         "Open Interest": int(open_interest),
-                                        "Spread %": spread_pct,
                                         "Ann. Return %": ann_return,
-                                        "Break-even": strike - mid_price,
-                                        "Contract": r.get("contractSymbol"),
+                                        "Break-even": break_even,
+                                        "Break-even Distance %": break_even_distance,
+                                        "Capital Required": capital_required,
                                     })
                         except Exception:
-                            continue
+                            pass
+                        finally:
+                            completed += 1
+                            progress.progress(min(completed / max(total_candidates, 1), 1.0))
 
                 progress.empty()
                 status.empty()
@@ -1712,27 +1761,112 @@ if active_section == "Options Finder":
                 if results.empty:
                     target_text = single_symbol if scan_mode == "Single Symbol" else "the BUY-rated stocks"
                     st.warning(f"No put contracts for {target_text} matched the current criteria.")
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Stocks Scanned", total_candidates)
+                    m2.metric("Expirations Checked", expirations_evaluated)
+                    m3.metric("Contracts Evaluated", f"{contracts_evaluated:,}")
+                    m4.metric("Matches Found", 0)
                 else:
                     results = results.sort_values(
-                        ["Watchlist", "Ann. Return %", "Open Interest"],
-                        ascending=[True, False, False],
+                        ["Trade Score", "Ann. Return %", "Open Interest"],
+                        ascending=[False, False, False],
                     ).reset_index(drop=True)
 
                     st.success(
                         f"Found {len(results)} matching put contracts from "
                         f"{results['Ticker'].nunique()} stock(s)."
                     )
+
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Stocks Scanned", total_candidates)
+                    m2.metric("Contracts Evaluated", f"{contracts_evaluated:,}")
+                    m3.metric("Matches Found", f"{len(results):,}")
+                    m4.metric("Best Trade Score", f"{results['Trade Score'].max():.1f}")
+
+                    m5, m6, m7, m8 = st.columns(4)
+                    m5.metric("Best Annual Return", f"{results['Ann. Return %'].max():.2f}%")
+                    m6.metric("Average Delta", f"{results['Delta'].dropna().mean():.3f}" if results['Delta'].notna().any() else "N/A")
+                    m7.metric("Average DTE", f"{results['DTE'].mean():.1f}")
+                    m8.metric("Unique Stocks", results["Ticker"].nunique())
+
+                    st.markdown("### Auto Best Trades")
+                    best_overall = results.iloc[0]
+                    conservative = results.sort_values(
+                        ["Delta", "Trade Score"], ascending=[False, False], na_position="last"
+                    ).iloc[0]
+                    high_yield = results.sort_values(
+                        ["Ann. Return %", "Trade Score"], ascending=[False, False]
+                    ).iloc[0]
+
+                    def show_best_trade(column, title, row):
+                        with column:
+                            st.markdown(f"**{title}**")
+                            st.metric(f"{row['Ticker']} · {row['Expiration']}", f"Score {row['Trade Score']:.1f}")
+                            st.caption(
+                                f"Strike ${row['Strike']:.2f} | Delta {row['Delta']:.3f} | "
+                                f"Annual return {row['Ann. Return %']:.2f}% | Mid ${row['Mid']:.2f}"
+                            )
+
+                    b1, b2, b3 = st.columns(3)
+                    show_best_trade(b1, "🥇 Best Overall", best_overall)
+                    show_best_trade(b2, "🛡️ Most Conservative", conservative)
+                    show_best_trade(b3, "🚀 Highest Yield", high_yield)
+
+                    st.markdown("### Matching Put Contracts")
+                    trade_results = results.copy()
+                    contract_labels = []
+                    for idx, row in trade_results.iterrows():
+                        contract_labels.append(
+                            f"{idx + 1}. {row['Ticker']} | {row['Expiration']} | "
+                            f"${row['Strike']:.2f} Put | Mid ${row['Mid']:.2f} | "
+                            f"DTE {int(row['DTE'])} | Return {row['Ann. Return %']:.2f}%"
+                        )
+
+                    with st.form("send_option_to_paper_form", clear_on_submit=False):
+                        selected_contract_label = st.selectbox(
+                            "Select a contract to paper trade",
+                            contract_labels,
+                            key="paper_trade_contract_selection",
+                        )
+                        send_to_paper = st.form_submit_button(
+                            "Send Selected Contract to Paper Trading",
+                            type="primary",
+                            use_container_width=True,
+                        )
+
+                    if send_to_paper:
+                        selected_idx = contract_labels.index(selected_contract_label)
+                        selected_contract = trade_results.iloc[selected_idx]
+                        description = (
+                            f"SELL 1 {selected_contract['Ticker']} "
+                            f"{selected_contract['Expiration']} ${selected_contract['Strike']:.2f} Put"
+                        )
+                        st.session_state.pending_paper_option = {
+                            "ticker": selected_contract["Ticker"],
+                            "quantity": 1.0,
+                            "premium": float(selected_contract["Mid"]),
+                            "description": description,
+                        }
+                        st.session_state.options_scan_active = False
+                        st.rerun()
+
+                    results = results.drop(columns=["Watchlist", "Company Name", "Contract", "Spread %"], errors="ignore")
+                    desired=["Ticker","Stock Price","Strike","DTE","Ann. Return %","Delta","Bid","Ask","Mid","Break-even","Probability OTM %","Capital Required","Volume","Open Interest","Trade Score"]
+                    results=results[[c for c in desired if c in results.columns]]
                     st.dataframe(results, use_container_width=True, hide_index=True, column_config={
+                        "Trade Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f"),
                         "Stock Price": st.column_config.NumberColumn(format="$%.2f"),
                         "Strike": st.column_config.NumberColumn(format="$%.2f"),
                         "Bid": st.column_config.NumberColumn(format="$%.2f"),
                         "Ask": st.column_config.NumberColumn(format="$%.2f"),
                         "Mid": st.column_config.NumberColumn(format="$%.2f"),
                         "Delta": st.column_config.NumberColumn(format="%.3f"),
+                        "Probability OTM %": st.column_config.NumberColumn(format="%.1f%%"),
                         "IV %": st.column_config.NumberColumn(format="%.2f%%"),
-                        "Spread %": st.column_config.NumberColumn(format="%.2f%%"),
                         "Ann. Return %": st.column_config.NumberColumn(format="%.2f%%"),
                         "Break-even": st.column_config.NumberColumn(format="$%.2f"),
+                        "Break-even Distance %": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Capital Required": st.column_config.NumberColumn(format="$%.0f"),
                     })
                     csv_name = (
                         f"{single_symbol.lower()}_put_scan.csv"
