@@ -1063,18 +1063,58 @@ if active_section == "Price vs EPS":
             with st.spinner(f"Loading {ticker}..."):
                 v = valuation(ticker, mg, mpe)
             st.markdown(f"### {symbol_company(v['Ticker'])}")
-            cols = st.columns(5)
-            metrics = [
-                ("Price", v["Price"], "$"), ("Fair Value", v["Fair Value"], "$"),
-                ("Timing Score", v["Timing Score"], ""),
-                ("Signal", normalize_signal(v["Signal"]), ""), ("Dividend Yield", v["Dividend Yield %"], "%"),
-            ]
-            for c, (label, value, unit) in zip(cols, metrics):
-                if isinstance(value, (int, float)) and value is not None:
-                    text = f"${value:,.2f}" if unit == "$" else f"{value:,.2f}%" if unit == "%" else f"{value}"
-                else:
-                    text = value or "N/A"
-                c.metric(label, text)
+
+            score = float(v.get("Timing Score") or 0)
+            signal = normalize_signal(v.get("Signal"))
+            price = v.get("Price")
+            fair_value = v.get("Fair Value")
+            upside = ((fair_value / price) - 1) * 100 if price and fair_value else None
+
+            gauge_col, details_col = st.columns([1.35, 1], gap="large")
+            with gauge_col:
+                gauge = go.Figure(go.Indicator(
+                    mode="gauge+number",
+                    value=score,
+                    number={"suffix": " / 100", "font": {"size": 42}},
+                    title={"text": f"Timing Score<br><span style='font-size:0.72em'>{signal}</span>"},
+                    gauge={
+                        "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "#94a3b8"},
+                        "bar": {"color": "rgba(255,255,255,0.0)", "thickness": 0.18},
+                        "bgcolor": "rgba(0,0,0,0)",
+                        "borderwidth": 0,
+                        "steps": [
+                            {"range": [0, 40], "color": "#ef4444"},
+                            {"range": [40, 60], "color": "#facc15"},
+                            {"range": [60, 100], "color": "#22c55e"},
+                        ],
+                        "threshold": {
+                            "line": {"color": "white", "width": 7},
+                            "thickness": 0.82,
+                            "value": score,
+                        },
+                    },
+                ))
+                gauge.update_layout(
+                    height=330,
+                    margin=dict(l=25, r=25, t=70, b=15),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    font={"color": "white"},
+                )
+                st.plotly_chart(gauge, use_container_width=True, config={"displayModeBar": False})
+                st.caption("Red: 0–39  •  Yellow: 40–59  •  Green: 60–100")
+
+            with details_col:
+                d1, d2 = st.columns(2)
+                d1.metric("Price", f"${price:,.2f}" if price is not None else "N/A")
+                d2.metric("Fair Value", f"${fair_value:,.2f}" if fair_value is not None else "N/A")
+                d3, d4 = st.columns(2)
+                d3.metric("Upside / Downside", f"{upside:+.2f}%" if upside is not None else "N/A")
+                d4.metric("Dividend Yield", f"{v['Dividend Yield %']:.2f}%" if v.get("Dividend Yield %") is not None else "N/A")
+                d5, d6 = st.columns(2)
+                d5.metric("EPS (TTM)", f"${v['Trailing EPS']:,.2f}" if v.get("Trailing EPS") is not None else "N/A")
+                d6.metric("P/E Ratio", f"{v['P/E']:,.2f}" if v.get("P/E") is not None else "N/A")
+                st.metric("Signal", signal)
+
             st.plotly_chart(
                 chart_figure(ticker, v, history_months),
                 use_container_width=True,
@@ -1851,7 +1891,7 @@ if active_section == "Options Finder":
                         st.rerun()
 
                     results = results.drop(columns=["Watchlist", "Company Name", "Contract", "Spread %"], errors="ignore")
-                    desired=["Ticker","Stock Price","Strike","DTE","Ann. Return %","Delta","Bid","Ask","Mid","Break-even","Probability OTM %","Capital Required","Volume","Open Interest","Trade Score"]
+                    desired=["Ticker","Stock Price","Strike","DTE","Ann. Return %","Delta","Ask","Mid","Break-even","Probability OTM %","Volume","Open Interest","Trade Score"]
                     results=results[[c for c in desired if c in results.columns]]
                     st.dataframe(results, use_container_width=True, hide_index=True, column_config={
                         "Trade Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f"),
