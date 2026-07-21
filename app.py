@@ -1559,7 +1559,29 @@ if active_section == "Backtesting":
 
 if active_section == "Options Finder":
     st.subheader("Options Finder")
-    st.caption("Scans put contracts only for stocks currently rated BUY across every watchlist tab.")
+    st.caption("Scan puts for one symbol or scan BUY-rated stocks across every watchlist tab.")
+
+    scan_mode = st.radio(
+        "Scan Mode",
+        ("Single Symbol", "BUY Scanner"),
+        horizontal=True,
+        key="options_scan_mode",
+    )
+
+    single_symbol = ""
+    if scan_mode == "Single Symbol":
+        default_options_ticker = st.session_state.get("options_ticker") or st.session_state.get("selected_ticker", "")
+        single_symbol = st.text_input(
+            "Ticker Symbol",
+            value=default_options_ticker,
+            placeholder="Enter a symbol, such as AAPL",
+            key="options_single_symbol_input",
+        ).upper().strip()
+        if single_symbol:
+            st.session_state.options_ticker = single_symbol
+            st.caption(symbol_company(single_symbol))
+    else:
+        st.info("BUY Scanner checks only stocks currently rated BUY in each watchlist tab. No ticker is required.")
 
     o1, o2, o3, o4 = st.columns(4)
     min_ann = o1.number_input("Min annual return %", value=24.0, step=1.0)
@@ -1573,10 +1595,13 @@ if active_section == "Options Finder":
     max_delta = d3.number_input("Maximum absolute Delta", value=0.18, min_value=0.01, max_value=1.0, step=0.01)
     max_spread_pct = d4.number_input("Maximum bid-ask spread %", value=20.0, min_value=0.0, step=1.0)
 
-    scan_options = st.button("Scan BUY-Rated Puts", type="primary", use_container_width=True)
+    button_label = "Scan Symbol Puts" if scan_mode == "Single Symbol" else "Scan BUY-Rated Puts"
+    scan_options = st.button(button_label, type="primary", use_container_width=True)
 
     if scan_options:
-        if min_dte > max_dte:
+        if scan_mode == "Single Symbol" and not single_symbol:
+            st.error("Enter a ticker symbol before scanning.")
+        elif min_dte > max_dte:
             st.error("Min DTE cannot be greater than Max DTE.")
         elif min_ann > max_ann:
             st.error("Minimum annual return cannot be greater than maximum annual return.")
@@ -1584,30 +1609,37 @@ if active_section == "Options Finder":
             try:
                 watchlist_groups = {}
 
-                with st.spinner("Finding BUY-rated stocks in each watchlist..."):
-                    top_buy_pool = most_active_symbols(count=100)
-                    top_buy_scan = scan_group(tuple(top_buy_pool))
-                    top_buy_tickers = top_buy_scan.loc[top_buy_scan["Signal"] == "BUY", "Ticker"].dropna().tolist()
-                    watchlist_groups["Top Buys"] = top_buy_tickers
+                if scan_mode == "Single Symbol":
+                    watchlist_groups["Single Symbol"] = [single_symbol]
+                else:
+                    with st.spinner("Finding BUY-rated stocks in each watchlist..."):
+                        top_buy_pool = most_active_symbols(count=100)
+                        top_buy_scan = scan_group(tuple(top_buy_pool))
+                        top_buy_tickers = top_buy_scan.loc[
+                            top_buy_scan["Signal"] == "BUY", "Ticker"
+                        ].dropna().tolist()
+                        watchlist_groups["Top Buys"] = top_buy_tickers
 
-                    for category_name, category_tickers in CATEGORY_LISTS.items():
-                        category_scan = scan_group(tuple(category_tickers))
-                        buy_tickers = category_scan.loc[category_scan["Signal"] == "BUY", "Ticker"].dropna().tolist()
-                        watchlist_groups[category_name] = buy_tickers
+                        for category_name, category_tickers in CATEGORY_LISTS.items():
+                            category_scan = scan_group(tuple(category_tickers))
+                            buy_tickers = category_scan.loc[
+                                category_scan["Signal"] == "BUY", "Ticker"
+                            ].dropna().tolist()
+                            watchlist_groups[category_name] = buy_tickers
 
                 rows = []
                 today = date.today()
-                total_buy_candidates = sum(len(v) for v in watchlist_groups.values())
+                total_candidates = sum(len(v) for v in watchlist_groups.values())
 
                 progress = st.progress(0)
                 status = st.empty()
                 completed = 0
 
-                for watchlist_name, buy_tickers in watchlist_groups.items():
-                    for scan_ticker in buy_tickers:
+                for watchlist_name, candidate_tickers in watchlist_groups.items():
+                    for scan_ticker in candidate_tickers:
                         status.caption(f"Scanning {watchlist_name}: {scan_ticker}")
                         completed += 1
-                        progress.progress(min(completed / max(total_buy_candidates, 1), 1.0))
+                        progress.progress(min(completed / max(total_candidates, 1), 1.0))
 
                         try:
                             spot = quick_quote(scan_ticker)["price"] or valuation(scan_ticker)["Price"]
@@ -1678,7 +1710,8 @@ if active_section == "Options Finder":
 
                 results = pd.DataFrame(rows)
                 if results.empty:
-                    st.warning("No BUY-rated put contracts matched the current preset criteria.")
+                    target_text = single_symbol if scan_mode == "Single Symbol" else "the BUY-rated stocks"
+                    st.warning(f"No put contracts for {target_text} matched the current criteria.")
                 else:
                     results = results.sort_values(
                         ["Watchlist", "Ann. Return %", "Open Interest"],
@@ -1687,7 +1720,7 @@ if active_section == "Options Finder":
 
                     st.success(
                         f"Found {len(results)} matching put contracts from "
-                        f"{results['Ticker'].nunique()} BUY-rated stocks."
+                        f"{results['Ticker'].nunique()} stock(s)."
                     )
                     st.dataframe(results, use_container_width=True, hide_index=True, column_config={
                         "Stock Price": st.column_config.NumberColumn(format="$%.2f"),
@@ -1697,13 +1730,19 @@ if active_section == "Options Finder":
                         "Mid": st.column_config.NumberColumn(format="$%.2f"),
                         "Delta": st.column_config.NumberColumn(format="%.3f"),
                         "IV %": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Spread %": st.column_config.NumberColumn(format="%.2f%%"),
                         "Ann. Return %": st.column_config.NumberColumn(format="%.2f%%"),
                         "Break-even": st.column_config.NumberColumn(format="$%.2f"),
                     })
+                    csv_name = (
+                        f"{single_symbol.lower()}_put_scan.csv"
+                        if scan_mode == "Single Symbol"
+                        else "buy_rated_put_scan.csv"
+                    )
                     st.download_button(
                         "Download CSV",
                         results.to_csv(index=False),
-                        file_name="buy_rated_put_scan.csv",
+                        file_name=csv_name,
                         mime="text/csv",
                     )
             except Exception as exc:
