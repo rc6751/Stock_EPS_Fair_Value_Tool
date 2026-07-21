@@ -1070,50 +1070,144 @@ if active_section == "Price vs EPS":
             fair_value = v.get("Fair Value")
             upside = ((fair_value / price) - 1) * 100 if price and fair_value else None
 
-            gauge_col, details_col = st.columns([1.35, 1], gap="large")
-            with gauge_col:
-                gauge = go.Figure(go.Indicator(
-                    mode="gauge+number",
-                    value=score,
-                    number={"suffix": " / 100", "font": {"size": 42}},
-                    title={"text": f"Timing Score<br><span style='font-size:0.72em'>{signal}</span>"},
-                    gauge={
-                        "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "#94a3b8"},
-                        "bar": {"color": "rgba(255,255,255,0.0)", "thickness": 0.18},
-                        "bgcolor": "rgba(0,0,0,0)",
-                        "borderwidth": 0,
-                        "steps": [
-                            {"range": [0, 40], "color": "#ef4444"},
-                            {"range": [40, 60], "color": "#facc15"},
-                            {"range": [60, 100], "color": "#22c55e"},
-                        ],
-                        "threshold": {
-                            "line": {"color": "white", "width": 7},
-                            "thickness": 0.82,
-                            "value": score,
-                        },
-                    },
-                ))
-                gauge.update_layout(
-                    height=330,
-                    margin=dict(l=25, r=25, t=70, b=15),
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    font={"color": "white"},
-                )
-                st.plotly_chart(gauge, use_container_width=True, config={"displayModeBar": False})
-                st.caption("Red: 0–39  •  Yellow: 40–59  •  Green: 60–100")
+            # Compact custom 180-degree meter styled like the approved dashboard mockup.
+            safe_score = max(0.0, min(100.0, score))
+            needle_angle = -90.0 + (safe_score * 1.8)
+            signal_color = {
+                "STRONG BUY": "#22c55e",
+                "BUY": "#22c55e",
+                "HOLD": "#facc15",
+                "SELL": "#ef4444",
+                "STRONG SELL": "#ef4444",
+            }.get(signal, "#facc15")
 
-            with details_col:
-                d1, d2 = st.columns(2)
-                d1.metric("Price", f"${price:,.2f}" if price is not None else "N/A")
-                d2.metric("Fair Value", f"${fair_value:,.2f}" if fair_value is not None else "N/A")
-                d3, d4 = st.columns(2)
-                d3.metric("Upside / Downside", f"{upside:+.2f}%" if upside is not None else "N/A")
-                d4.metric("Dividend Yield", f"{v['Dividend Yield %']:.2f}%" if v.get("Dividend Yield %") is not None else "N/A")
-                d5, d6 = st.columns(2)
-                d5.metric("EPS (TTM)", f"${v['Trailing EPS']:,.2f}" if v.get("Trailing EPS") is not None else "N/A")
-                d6.metric("P/E Ratio", f"{v['P/E']:,.2f}" if v.get("P/E") is not None else "N/A")
-                st.metric("Signal", signal)
+            price_text = f"${price:,.2f}" if price is not None else "N/A"
+            fair_value_text = f"${fair_value:,.2f}" if fair_value is not None else "N/A"
+            upside_text = f"{upside:+.2f}%" if upside is not None else "N/A"
+            dividend_text = f"{v['Dividend Yield %']:.2f}%" if v.get("Dividend Yield %") is not None else "N/A"
+            eps_text = f"${v['Trailing EPS']:,.2f}" if v.get("Trailing EPS") is not None else "N/A"
+            pe_text_display = f"{v['P/E']:,.2f}" if v.get("P/E") is not None else "N/A"
+
+            meter_html = f"""
+            <style>
+              * {{ box-sizing: border-box; }}
+              .valuation-card {{
+                width: 100%;
+                min-height: 258px;
+                padding: 18px 22px;
+                border-radius: 18px;
+                background: linear-gradient(145deg, #0b2a5b 0%, #071d42 100%);
+                border: 1px solid rgba(96,165,250,.22);
+                box-shadow: 0 12px 30px rgba(2,8,23,.34);
+                color: #f8fafc;
+                font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                display: grid;
+                grid-template-columns: minmax(330px, 1.15fr) minmax(280px, .85fr);
+                gap: 24px;
+                align-items: center;
+              }}
+              .meter-title {{
+                margin: 0 0 2px 0;
+                text-align: center;
+                font-size: 20px;
+                font-weight: 800;
+                letter-spacing: .01em;
+              }}
+              .meter-subtitle {{
+                margin: 0 0 3px 0;
+                text-align: center;
+                color: #94a3b8;
+                font-size: 12px;
+              }}
+              .gauge-wrap {{ position: relative; width: 100%; max-width: 430px; height: 190px; margin: 0 auto; }}
+              .gauge-svg {{ width: 100%; height: 100%; overflow: visible; }}
+              .gauge-score {{
+                position: absolute;
+                left: 50%;
+                top: 112px;
+                transform: translateX(-50%);
+                text-align: center;
+                line-height: 1;
+              }}
+              .gauge-score .number {{ font-size: 43px; font-weight: 900; letter-spacing: -.04em; }}
+              .gauge-score .signal {{ margin-top: 7px; font-size: 14px; font-weight: 900; color: {signal_color}; letter-spacing: .12em; }}
+              .metric-panel {{
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px 12px;
+              }}
+              .metric-box {{
+                padding: 11px 13px;
+                border-radius: 12px;
+                background: rgba(15, 23, 42, .52);
+                border: 1px solid rgba(148,163,184,.15);
+              }}
+              .metric-label {{ color: #94a3b8; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }}
+              .metric-value {{ margin-top: 4px; color: #f8fafc; font-size: 19px; font-weight: 850; white-space: nowrap; }}
+              .metric-value.accent {{ color: #60a5fa; }}
+              .metric-value.upside {{ color: {'#22c55e' if upside is not None and upside >= 0 else '#ef4444'}; }}
+              @media (max-width: 760px) {{
+                .valuation-card {{ grid-template-columns: 1fr; padding: 16px; }}
+                .gauge-wrap {{ max-width: 390px; }}
+              }}
+            </style>
+            <div class="valuation-card">
+              <div>
+                <div class="meter-title">Valuation Timing</div>
+                <div class="meter-subtitle">Timing Score</div>
+                <div class="gauge-wrap">
+                  <svg class="gauge-svg" viewBox="0 0 430 210" role="img" aria-label="Timing score {safe_score:.0f} out of 100">
+                    <defs>
+                      <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+                        <feGaussianBlur stdDeviation="3.5" result="blur"/>
+                        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                      </filter>
+                    </defs>
+                    <path d="M 48 172 A 167 167 0 0 1 103 64" fill="none" stroke="#ef4444" stroke-width="28" stroke-linecap="butt"/>
+                    <path d="M 103 64 A 167 167 0 0 1 181 22" fill="none" stroke="#f97316" stroke-width="28" stroke-linecap="butt"/>
+                    <path d="M 181 22 A 167 167 0 0 1 273 31" fill="none" stroke="#facc15" stroke-width="28" stroke-linecap="butt"/>
+                    <path d="M 273 31 A 167 167 0 0 1 382 172" fill="none" stroke="#22c55e" stroke-width="28" stroke-linecap="butt"/>
+
+                    <g stroke="#dbeafe" stroke-width="2" opacity=".9">
+                      <line x1="48" y1="172" x2="64" y2="172"/>
+                      <line x1="74" y1="93" x2="88" y2="101"/>
+                      <line x1="131" y1="38" x2="139" y2="52"/>
+                      <line x1="215" y1="5" x2="215" y2="22"/>
+                      <line x1="299" y1="38" x2="291" y2="52"/>
+                      <line x1="356" y1="93" x2="342" y2="101"/>
+                      <line x1="382" y1="172" x2="366" y2="172"/>
+                    </g>
+                    <g fill="#cbd5e1" font-size="11" font-weight="700" text-anchor="middle">
+                      <text x="42" y="195">0</text>
+                      <text x="82" y="79">20</text>
+                      <text x="142" y="26">40</text>
+                      <text x="288" y="27">60</text>
+                      <text x="348" y="79">80</text>
+                      <text x="388" y="195">100</text>
+                    </g>
+                    <g transform="rotate({needle_angle:.2f} 215 172)" filter="url(#glow)">
+                      <polygon points="215,38 207,171 223,171" fill="#f8fafc"/>
+                    </g>
+                    <circle cx="215" cy="172" r="16" fill="#e2e8f0"/>
+                    <circle cx="215" cy="172" r="8" fill="#334155"/>
+                  </svg>
+                  <div class="gauge-score">
+                    <div class="number">{safe_score:.0f}</div>
+                    <div class="signal">{signal}</div>
+                  </div>
+                </div>
+              </div>
+              <div class="metric-panel">
+                <div class="metric-box"><div class="metric-label">Price</div><div class="metric-value accent">{price_text}</div></div>
+                <div class="metric-box"><div class="metric-label">Fair Value</div><div class="metric-value">{fair_value_text}</div></div>
+                <div class="metric-box"><div class="metric-label">Upside / Downside</div><div class="metric-value upside">{upside_text}</div></div>
+                <div class="metric-box"><div class="metric-label">Dividend Yield</div><div class="metric-value">{dividend_text}</div></div>
+                <div class="metric-box"><div class="metric-label">EPS (TTM)</div><div class="metric-value">{eps_text}</div></div>
+                <div class="metric-box"><div class="metric-label">P/E Ratio</div><div class="metric-value">{pe_text_display}</div></div>
+              </div>
+            </div>
+            """
+            components.html(meter_html, height=286, scrolling=False)
 
             st.plotly_chart(
                 chart_figure(ticker, v, history_months),
